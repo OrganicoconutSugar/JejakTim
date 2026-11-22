@@ -1,0 +1,26 @@
+{
+  "name": "video-kincir",
+  "version": "1.0.0",
+  "description": "Seamless portrait windmill asset animation",
+  "main": "index.js",
+  "scripts": {
+    "studio": "node run-remotion.cjs studio src/index.tsx",
+    "typecheck": "tsc --noEmit",
+    "render": "node run-remotion.cjs render src/index.tsx KincirPortrait out/kincir-portrait-1080x1920.mp4 --codec=h264 --crf=16 --pixel-format=yuv420p --muted",
+    "render:transparent": "node run-remotion.cjs render src/index.tsx KincirTransparent out/kincir-portrait-transparent.webm --codec=vp9 --image-format=png --pixel-format=yuva420p --crf=20 --muted"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@remotion/cli": "4.0.320",
+    "@remotion/renderer": "4.0.320",
+    "@types/react": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "remotion": "4.0.320",
+    "typescript": "5.8.3"
+  },
+  "private": true
+}

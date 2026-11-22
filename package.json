@@ -1,0 +1,1 @@
+{"name":"jejaktim-local-tools","private":true,"scripts":{"emulators":"firebase emulators:start --project demo-jejaktim --only auth,firestore,functions","test:security":"firebase emulators:exec --project demo-jejaktim --only auth,firestore,functions 'npm --prefix functions run test:integration'"},"devDependencies":{"firebase-tools":"^13.35.1"}}

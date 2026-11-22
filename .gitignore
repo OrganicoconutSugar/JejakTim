@@ -1,0 +1,20 @@
+node_modules/
+.DS_Store
+functions/lib/
+.firebase/
+*-debug.log
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*service-account*.json
+.playwright-cli/
+
+# Generated QA and release artifacts (source assets and design documents stay tracked)
+outputs/*.log
+outputs/*.apk
+outputs/*.zip
+outputs/*.png
+outputs/.DS_Store
+tmp/
