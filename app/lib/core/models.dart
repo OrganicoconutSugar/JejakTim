@@ -11,6 +11,11 @@ List<String> stringsOf(Json row, String key) =>
     (row[key] as List? ?? []).map((e) => e.toString()).toList();
 DateTime? dateOf(Json row, String key) =>
     DateTime.tryParse(textOf(row, key))?.toLocal();
+DateTime dateOnly(DateTime value) =>
+    DateTime(value.year, value.month, value.day);
+DateTime today() => dateOnly(DateTime.now());
+bool isPastDate(DateTime? value) =>
+    value != null && dateOnly(value).isBefore(today());
 String dateLabel(dynamic value, {bool time = false}) {
   final d = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
   return d == null
@@ -27,6 +32,26 @@ const statusLabels = {
   'cancelled': 'Dibatalkan',
 };
 String statusLabel(Json task) => statusLabels[task['status']] ?? 'Belum mulai';
+
+const activityActionLabels = {
+  'createProject': 'Membuat proyek',
+  'saveProject': 'Memperbarui pengaturan proyek',
+  'createInvite': 'Memperbarui kode undangan',
+  'joinProject': 'Bergabung ke proyek',
+  'removeMember': 'Menghapus keanggotaan proyek',
+  'saveTask': 'Menyimpan perubahan tugas',
+  'startTask': 'Memulai tugas',
+  'addUpdate': 'Mencatat pembaruan tugas',
+  'submitTask': 'Mengirim bukti kerja',
+  'reviewSubmission': 'Meninjau hasil kerja',
+  'removeTask': 'Menghapus tugas',
+  'generateProjectReport': 'Membuat snapshot laporan',
+};
+
+String activitySummary(Json event) {
+  final raw = textOf(event, 'summary').trim();
+  return activityActionLabels[raw] ?? raw;
+}
 
 class AppFailure implements Exception {
   final String message;

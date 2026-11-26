@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:video_player/video_player.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../core/illustrated_icon.dart';
@@ -59,10 +60,10 @@ class _SplashState extends ConsumerState<SplashScreen> {
     if (!mounted) return;
     final c = ref.read(controllerProvider);
     context.go(
-      !c.onboarded
-          ? '/onboarding'
-          : c.authenticated
+      c.authenticated
           ? '/home'
+          : !c.onboarded
+          ? '/onboarding'
           : '/auth/login',
     );
   }
@@ -372,16 +373,66 @@ class AuthScreen extends ConsumerStatefulWidget {
 }
 
 class _AuthState extends ConsumerState<AuthScreen> {
+  static const _heroScenes = [
+    (
+      image: 'assets/onboarding/jejak-langkah.png',
+      alignment: Alignment(0, .42),
+      chip: 'Jejak Langkah',
+    ),
+    (
+      image: 'assets/onboarding/tim-bersama.png',
+      alignment: Alignment.center,
+      chip: 'Satu Tim',
+    ),
+    (
+      image: 'assets/onboarding/tumbuh-bersama.png',
+      alignment: Alignment.center,
+      chip: 'Tumbuh Bersama',
+    ),
+  ];
+
   final form = GlobalKey<FormState>();
   final email = TextEditingController(),
       password = TextEditingController(),
       confirmPassword = TextEditingController(),
       name = TextEditingController();
+  late int _sceneIndex =
+      widget.mode == 'register'
+          ? 1
+          : widget.mode == 'forgot-password'
+          ? 2
+          : 0;
+  Timer? _sceneTimer;
+  bool _sceneTimerStarted = false;
   bool busy = false, hidden = true, confirmHidden = true, sent = false;
   bool rememberPassword = false;
   String? error;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_sceneTimerStarted) {
+      _sceneTimerStarted = true;
+      if (!reduceMotion(context)) _startSceneTimer();
+    }
+  }
+
+  void _startSceneTimer() {
+    _sceneTimer?.cancel();
+    _sceneTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted) return;
+      setState(() => _sceneIndex = (_sceneIndex + 1) % _heroScenes.length);
+    });
+  }
+
+  void _advanceScene() {
+    setState(() => _sceneIndex = (_sceneIndex + 1) % _heroScenes.length);
+    if (!reduceMotion(context)) _startSceneTimer();
+  }
+
   @override
   void dispose() {
+    _sceneTimer?.cancel();
     email.dispose();
     password.dispose();
     confirmPassword.dispose();
@@ -450,286 +501,490 @@ class _AuthState extends ConsumerState<AuthScreen> {
   Widget build(BuildContext context) {
     final register = widget.mode == 'register',
         forgot = widget.mode == 'forgot-password';
+    final compact = MediaQuery.sizeOf(context).width <= 375;
+    final scene = _heroScenes[_sceneIndex % _heroScenes.length];
+    final heroMinHeight =
+        forgot
+            ? 200.0
+            : register
+            ? (compact ? 210.0 : 230.0)
+            : (compact ? 240.0 : 280.0);
+    final motionDuration = Duration(
+      milliseconds: reduceMotion(context) ? 0 : 700,
+    );
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: AutofillGroup(
-            child: Form(
-              key: form,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const BrandLogo(size: 44),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          'JejakTim',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w600,
+      backgroundColor: C.canvas,
+      body: SingleChildScrollView(
+        child: AutofillGroup(
+          child: Form(
+            key: form,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Stack(
+                  children: [
+                    Positioned.fill(
+                      child: AnimatedSwitcher(
+                        duration: motionDuration,
+                        switchInCurve: Curves.easeInOut,
+                        switchOutCurve: Curves.easeInOut,
+                        child: Image.asset(
+                          scene.image,
+                          key: ValueKey(scene.image),
+                          fit: BoxFit.cover,
+                          alignment: scene.alignment,
+                          width: double.infinity,
+                          height: double.infinity,
+                          gaplessPlayback: true,
+                          excludeFromSemantics: true,
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: const [0, .38, .72, 1],
+                            colors: [
+                              Colors.black.withValues(alpha: .46),
+                              Colors.black.withValues(alpha: .16),
+                              Colors.black.withValues(alpha: .64),
+                              Colors.black.withValues(alpha: .86),
+                            ],
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-                  if (!forgot)
-                    Container(
-                      height: 180,
-                      width: double.infinity,
-                      clipBehavior: Clip.antiAlias,
-                      decoration: BoxDecoration(
-                        color: C.sky,
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: Stack(
-                        children: [
-                          const Positioned(
-                            top: 22,
-                            left: 22,
-                            child: Text(
-                              'Langkah kecil,\nhasil bersama.',
-                              style: TextStyle(
-                                fontSize: 23,
-                                fontWeight: FontWeight.w600,
-                                height: 1.2,
+                    ),
+                    SafeArea(
+                      bottom: false,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: heroMinHeight),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 14, 24, 44),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const BrandLogo(size: 38, inverse: true),
+                                  const SizedBox(width: 10),
+                                  const Expanded(
+                                    child: Text(
+                                      'JejakTim',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600,
+                                        shadows: [
+                                          Shadow(
+                                            color: Color(0x55000000),
+                                            blurRadius: 12,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  Tooltip(
+                                    message: 'Ganti suasana foto',
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(30),
+                                      child: BackdropFilter(
+                                        filter: ImageFilter.blur(
+                                          sigmaX: 12,
+                                          sigmaY: 12,
+                                        ),
+                                        child: Material(
+                                          color: Colors.white.withValues(
+                                            alpha: .18,
+                                          ),
+                                          child: InkWell(
+                                            onTap: _advanceScene,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 7,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(30),
+                                                border: Border.all(
+                                                  color: Colors.white
+                                                      .withValues(alpha: .32),
+                                                ),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  for (
+                                                    var i = 0;
+                                                    i < _heroScenes.length;
+                                                    i++
+                                                  )
+                                                    AnimatedContainer(
+                                                      duration: motionDuration,
+                                                      margin: EdgeInsets.only(
+                                                        right:
+                                                            i ==
+                                                                    _heroScenes
+                                                                            .length -
+                                                                        1
+                                                                ? 0
+                                                                : 4,
+                                                      ),
+                                                      width:
+                                                          _sceneIndex == i
+                                                              ? 14
+                                                              : 5,
+                                                      height: 5,
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            _sceneIndex == i
+                                                                ? Colors.white
+                                                                : Colors.white
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          .48,
+                                                                    ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              8,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
+                              SizedBox(height: forgot ? 28 : 48),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    forgot
+                                        ? 'PULIHKAN AKSES'
+                                        : register
+                                        ? 'MULAI BERSAMA'
+                                        : 'RUANG KOLABORASI',
+                                    style: const TextStyle(
+                                      color: Color(0xFFDCEBFF),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 1.7,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    forgot
+                                        ? 'Lupa kata sandi?'
+                                        : register
+                                        ? 'Kenalan dulu, yuk.'
+                                        : 'Senang kamu kembali.',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 30,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.12,
+                                      letterSpacing: -.7,
+                                      shadows: [
+                                        Shadow(
+                                          color: Color(0x66000000),
+                                          blurRadius: 16,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    forgot
+                                        ? 'Kami akan mengirim tautan untuk mengatur ulang kata sandi.'
+                                        : register
+                                        ? 'Buat akun dan mulai langkah pertama bersama tim.'
+                                        : 'Masuk untuk melanjutkan langkah bersama timmu.',
+                                    style: const TextStyle(
+                                      color: Color(0xFFF2F6FF),
+                                      fontSize: 14,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: -1,
+                      child: SizedBox(
+                        height: 26,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: C.canvas,
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(28),
                             ),
                           ),
-                          Positioned(
-                            right: -65,
-                            bottom: -30,
-                            child: Image.asset(
-                              'assets/illustrations/team-avatars.png',
-                              width: 260,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(S.page, 4, S.page, S.xxl),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (error != null) ...[
+                          ErrorBanner(error!),
+                          const SizedBox(height: 16),
+                        ],
+                        if (sent)
+                          Surface(
+                            color: C.lime,
+                            child: Text(
+                              register
+                                  ? 'Akun dibuat. Periksa email verifikasi, lalu kembali ke halaman masuk.'
+                                  : 'Jika alamat email terdaftar, tautan reset telah dikirim. Periksa kotak masuk Anda.',
+                            ),
+                          )
+                        else ...[
+                          if (register) ...[
+                            TextFormField(
+                              controller: name,
+                              decoration: const InputDecoration(
+                                labelText: 'Nama lengkap',
+                                prefixIcon: Icon(
+                                  LucideIcons.user,
+                                  size: 20,
+                                  color: Color(0xFF286DA0),
+                                ),
+                              ),
+                              validator: (v) => requiredText(v, max: 80),
+                              autofillHints: const [AutofillHints.name],
+                              textInputAction: TextInputAction.next,
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                          TextFormField(
+                            controller: email,
+                            decoration: const InputDecoration(
+                              labelText: 'Email',
+                              prefixIcon: AppIcon(LucideIcons.mail, size: 20),
+                            ),
+                            validator: emailError,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [AutofillHints.email],
+                            textInputAction: TextInputAction.next,
+                          ),
+                          if (!forgot) ...[
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: password,
+                              obscureText: hidden,
+                              decoration: InputDecoration(
+                                labelText: 'Kata sandi',
+                                prefixIcon: const AppIcon(
+                                  LucideIcons.lock,
+                                  size: 20,
+                                ),
+                                suffixIcon: IconButton(
+                                  tooltip:
+                                      hidden
+                                          ? 'Tampilkan kata sandi'
+                                          : 'Sembunyikan kata sandi',
+                                  onPressed:
+                                      () => setState(() => hidden = !hidden),
+                                  icon: AppIcon(
+                                    hidden
+                                        ? LucideIcons.eye
+                                        : LucideIcons.eyeOff,
+                                    size: 20,
+                                  ),
+                                ),
+                              ),
+                              validator:
+                                  (v) =>
+                                      (v?.length ?? 0) < 8
+                                          ? 'Gunakan minimal 8 karakter.'
+                                          : null,
+                              autofillHints: [
+                                register
+                                    ? AutofillHints.newPassword
+                                    : AutofillHints.password,
+                              ],
+                              textInputAction:
+                                  register
+                                      ? TextInputAction.next
+                                      : TextInputAction.done,
+                              onFieldSubmitted:
+                                  register ? null : (_) => submit(),
+                            ),
+                            if (register) ...[
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: confirmPassword,
+                                obscureText: confirmHidden,
+                                decoration: InputDecoration(
+                                  labelText: 'Konfirmasi kata sandi',
+                                  prefixIcon: const AppIcon(
+                                    LucideIcons.lock,
+                                    size: 20,
+                                  ),
+                                  suffixIcon: IconButton(
+                                    tooltip:
+                                        confirmHidden
+                                            ? 'Tampilkan konfirmasi kata sandi'
+                                            : 'Sembunyikan konfirmasi kata sandi',
+                                    onPressed:
+                                        () => setState(
+                                          () => confirmHidden = !confirmHidden,
+                                        ),
+                                    icon: AppIcon(
+                                      confirmHidden
+                                          ? LucideIcons.eye
+                                          : LucideIcons.eyeOff,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Masukkan ulang kata sandi.';
+                                  }
+                                  if (value != password.text) {
+                                    return 'Kata sandi belum sama.';
+                                  }
+                                  return null;
+                                },
+                                autofillHints: const [
+                                  AutofillHints.newPassword,
+                                ],
+                                textInputAction: TextInputAction.done,
+                                onFieldSubmitted: (_) => submit(),
+                              ),
+                            ],
+                            if (!register) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Checkbox(
+                                    value: rememberPassword,
+                                    onChanged:
+                                        busy
+                                            ? null
+                                            : (value) => setState(
+                                              () =>
+                                                  rememberPassword =
+                                                      value ?? false,
+                                            ),
+                                  ),
+                                  const Expanded(
+                                    child: Text('Ingat kata sandi'),
+                                  ),
+                                  TextButton(
+                                    onPressed:
+                                        () => context.push(
+                                          '/auth/forgot-password',
+                                        ),
+                                    child: const Text('Lupa kata sandi?'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                          const SizedBox(height: 18),
+                          PrimaryButton(
+                            forgot
+                                ? 'Kirim tautan reset'
+                                : register
+                                ? 'Buat akun'
+                                : 'Masuk',
+                            onPressed: submit,
+                            busy: busy,
+                          ),
+                        ],
+                        if (!forgot) ...[
+                          const SizedBox(height: 16),
+                          const Row(
+                            children: [
+                              Expanded(child: Divider(color: C.line)),
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 14),
+                                child: Text(
+                                  'atau',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: C.muted,
+                                  ),
+                                ),
+                              ),
+                              Expanded(child: Divider(color: C.line)),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size(double.infinity, 52),
+                            ),
+                            onPressed: busy ? null : googleSignIn,
+                            icon: SvgPicture.asset(
+                              'assets/branding/google-g.svg',
+                              width: 20,
+                              height: 20,
                               excludeFromSemantics: true,
                             ),
+                            label: Text(
+                              register
+                                  ? 'Daftar dengan Google'
+                                  : 'Masuk dengan Google',
+                            ),
                           ),
                         ],
-                      ),
-                    ),
-                  const SizedBox(height: 28),
-                  Text(
-                    forgot
-                        ? 'Lupa kata sandi?'
-                        : register
-                        ? 'Kenalan dulu, yuk.'
-                        : 'Senang kamu kembali.',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    forgot
-                        ? 'Kami akan mengirim tautan untuk mengatur ulang kata sandi.'
-                        : register
-                        ? 'Buat akun dan mulai langkah pertama bersama tim.'
-                        : 'Masuk untuk melanjutkan langkah bersama timmu.',
-                    style: const TextStyle(color: C.muted, fontSize: 16),
-                  ),
-                  const SizedBox(height: 28),
-                  if (error != null) ...[
-                    ErrorBanner(error!),
-                    const SizedBox(height: 16),
-                  ],
-                  if (sent)
-                    Surface(
-                      color: C.lime,
-                      child: Text(
-                        register
-                            ? 'Akun dibuat. Periksa email verifikasi, lalu kembali ke halaman masuk.'
-                            : 'Jika alamat email terdaftar, tautan reset telah dikirim. Periksa kotak masuk Anda.',
-                      ),
-                    )
-                  else ...[
-                    if (register) ...[
-                      TextFormField(
-                        controller: name,
-                        decoration: const InputDecoration(
-                          labelText: 'Nama lengkap',
-                          prefixIcon: Icon(
-                            LucideIcons.user,
-                            size: 20,
-                            color: Color(0xFF286DA0),
-                          ),
-                        ),
-                        validator: (v) => requiredText(v, max: 80),
-                        autofillHints: const [AutofillHints.name],
-                        textInputAction: TextInputAction.next,
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    TextFormField(
-                      controller: email,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: AppIcon(LucideIcons.mail, size: 20),
-                      ),
-                      validator: emailError,
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      textInputAction: TextInputAction.next,
-                    ),
-                    if (!forgot) ...[
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: password,
-                        obscureText: hidden,
-                        decoration: InputDecoration(
-                          labelText: 'Kata sandi',
-                          prefixIcon: const AppIcon(LucideIcons.lock, size: 20),
-                          suffixIcon: IconButton(
-                            tooltip:
-                                hidden
-                                    ? 'Tampilkan kata sandi'
-                                    : 'Sembunyikan kata sandi',
-                            onPressed: () => setState(() => hidden = !hidden),
-                            icon: AppIcon(
-                              hidden ? LucideIcons.eye : LucideIcons.eyeOff,
-                              size: 20,
+                        const SizedBox(height: S.md),
+                        Center(
+                          child: TextButton(
+                            onPressed:
+                                () => context.go(
+                                  register || forgot
+                                      ? '/auth/login'
+                                      : '/auth/register',
+                                ),
+                            child: Text(
+                              register || forgot
+                                  ? 'Sudah punya akun? Masuk'
+                                  : 'Belum punya akun? Daftar',
                             ),
                           ),
                         ),
-                        validator:
-                            (v) =>
-                                (v?.length ?? 0) < 8
-                                    ? 'Gunakan minimal 8 karakter.'
-                                    : null,
-                        autofillHints: [
-                          register
-                              ? AutofillHints.newPassword
-                              : AutofillHints.password,
-                        ],
-                        textInputAction:
-                            register
-                                ? TextInputAction.next
-                                : TextInputAction.done,
-                        onFieldSubmitted: register ? null : (_) => submit(),
-                      ),
-                      if (register) ...[
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: confirmPassword,
-                          obscureText: confirmHidden,
-                          decoration: InputDecoration(
-                            labelText: 'Konfirmasi kata sandi',
-                            prefixIcon: const AppIcon(
-                              LucideIcons.lock,
-                              size: 20,
-                            ),
-                            suffixIcon: IconButton(
-                              tooltip:
-                                  confirmHidden
-                                      ? 'Tampilkan konfirmasi kata sandi'
-                                      : 'Sembunyikan konfirmasi kata sandi',
-                              onPressed:
-                                  () => setState(
-                                    () => confirmHidden = !confirmHidden,
-                                  ),
-                              icon: AppIcon(
-                                confirmHidden
-                                    ? LucideIcons.eye
-                                    : LucideIcons.eyeOff,
-                                size: 20,
-                              ),
-                            ),
+                        const SizedBox(height: S.sm),
+                        const Center(
+                          child: Text(
+                            'Kerja bareng, kontribusi terlihat.',
+                            style: T.caption,
                           ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Masukkan ulang kata sandi.';
-                            }
-                            if (value != password.text) {
-                              return 'Kata sandi belum sama.';
-                            }
-                            return null;
-                          },
-                          autofillHints: const [AutofillHints.newPassword],
-                          textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => submit(),
                         ),
                       ],
-                      if (!register)
-                        Row(
-                          children: [
-                            Checkbox(
-                              value: rememberPassword,
-                              onChanged:
-                                  busy
-                                      ? null
-                                      : (value) => setState(
-                                        () => rememberPassword = value ?? false,
-                                      ),
-                            ),
-                            const Expanded(child: Text('Ingat kata sandi')),
-                            TextButton(
-                              onPressed:
-                                  () => context.push('/auth/forgot-password'),
-                              child: const Text('Lupa kata sandi?'),
-                            ),
-                          ],
-                        ),
-                    ],
-                    const SizedBox(height: 22),
-                    PrimaryButton(
-                      forgot
-                          ? 'Kirim tautan reset'
-                          : register
-                          ? 'Buat akun'
-                          : 'Masuk',
-                      onPressed: submit,
-                      busy: busy,
-                    ),
-                  ],
-                  if (!forgot) ...[
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 54),
-                        side: const BorderSide(color: C.line),
-                      ),
-                      onPressed: busy ? null : googleSignIn,
-                      icon: SvgPicture.asset(
-                        'assets/branding/google-g.svg',
-                        width: 20,
-                        height: 20,
-                        excludeFromSemantics: true,
-                      ),
-                      label: Text(
-                        register
-                            ? 'Daftar dengan Google'
-                            : 'Masuk dengan Google',
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Center(
-                    child: TextButton(
-                      onPressed:
-                          () => context.go(
-                            register || forgot
-                                ? '/auth/login'
-                                : '/auth/register',
-                          ),
-                      child: Text(
-                        register || forgot
-                            ? 'Sudah punya akun? Masuk'
-                            : 'Belum punya akun? Daftar',
-                      ),
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  const Center(
-                    child: Text(
-                      'Kerja bareng, kontribusi terlihat.',
-                      style: TextStyle(fontSize: 12, color: C.muted),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

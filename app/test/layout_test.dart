@@ -12,6 +12,7 @@ import 'package:jejaktim/features/tasks/task_screens.dart';
 import 'package:jejaktim/features/insights/insight_screens.dart';
 import 'package:jejaktim/features/profile/profile_screens.dart';
 import 'package:jejaktim/features/reports/report_screens.dart';
+import 'fake_repository.dart';
 
 void main() {
   setUpAll(() async {
@@ -87,7 +88,7 @@ void main() {
         ];
         for (final screen in screens) {
           final c = AppController(await SharedPreferences.getInstance());
-          await c.enterDemo();
+          await c.setSessionForTest(FakeTeamRepository(), 'nara');
           await tester.pumpWidget(
             ProviderScope(
               overrides: [controllerProvider.overrideWith((ref) => c)],

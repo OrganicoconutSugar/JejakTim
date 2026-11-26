@@ -12,6 +12,7 @@ import '../../core/controller.dart';
 import '../../core/evidence_photo.dart';
 import '../../core/models.dart';
 import '../../core/design.dart';
+import '../../core/geo_icons.dart';
 import '../../core/layout.dart';
 import '../projects/project_screens.dart';
 
@@ -26,6 +27,20 @@ class _TasksState extends ConsumerState<TasksScreen> {
   @override
   Widget build(BuildContext context) {
     final c = ref.watch(controllerProvider);
+    final activeCount =
+        c.tasks
+            .where(
+              (t) => [
+                'todo',
+                'in_progress',
+                'revision_requested',
+              ].contains(t['status']),
+            )
+            .length;
+    final reviewCount =
+        c.tasks.where((t) => t['status'] == 'submitted').length;
+    final doneCount = c.tasks.where((t) => t['status'] == 'done').length;
+
     final list =
         c.tasks
             .where(
@@ -55,38 +70,57 @@ class _TasksState extends ConsumerState<TasksScreen> {
       child: ContentList(
         onRefresh: c.refresh,
         children: [
-          const SizedBox(height: 8),
+          const PageHeader(
+            'Satu langkah\nlebih dekat.',
+            subtitle: 'Tugas yang jelas, kerja tim yang lebih tenang.',
+            trailing: GeoIcon(GeoIconKind.clipboard, size: 46),
+          ),
+
+          // Quick status overview strip
           Row(
             children: [
               Expanded(
-                child: Text(
-                  'Satu langkah\nlebih dekat.',
-                  style: Theme.of(context).textTheme.headlineLarge,
+                child: _TaskMiniStat(
+                  '$activeCount',
+                  'Aktif',
+                  C.sky,
+                  C.blue,
                 ),
               ),
-              Image.asset(
-                'assets/illustrations/task-checklist.png',
-                width: 88,
-                height: 88,
-                fit: BoxFit.contain,
-                excludeFromSemantics: true,
+              const SizedBox(width: 10),
+              Expanded(
+                child: _TaskMiniStat(
+                  '$reviewCount',
+                  'Review',
+                  C.lavender,
+                  C.purple,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _TaskMiniStat(
+                  '$doneCount',
+                  'Selesai',
+                  C.lime,
+                  C.teal,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Tugas yang jelas, kerja tim yang lebih tenang.',
-            style: TextStyle(color: C.muted),
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: S.lg),
+
           TextField(
             decoration: const InputDecoration(
               hintText: 'Cari tugas...',
-              prefixIcon: AppIcon(LucideIcons.search, size: 20),
+              prefixIcon: Padding(
+                padding: EdgeInsets.all(13),
+                child: GeoIcon(GeoIconKind.search, size: 20),
+              ),
             ),
             onChanged: (v) => setState(() => query = v),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: S.md),
+
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -100,10 +134,17 @@ class _TasksState extends ConsumerState<TasksScreen> {
                             selected: filter == f,
                             showCheckmark: false,
                             selectedColor: C.blue,
+                            backgroundColor: Colors.white,
                             labelStyle: TextStyle(
-                              color: filter == f ? Colors.white : C.ink,
+                              color: filter == f ? Colors.white : C.ink2,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
                             ),
-                            shape: const StadiumBorder(),
+                            shape: StadiumBorder(
+                              side: BorderSide(
+                                color: filter == f ? C.blue : C.line,
+                              ),
+                            ),
                             onSelected: (_) => setState(() => filter = f),
                           ),
                         ),
@@ -113,14 +154,16 @@ class _TasksState extends ConsumerState<TasksScreen> {
           ),
           SectionTitle('${list.length} tugas'),
           if (list.isEmpty)
-            const EmptyState(
-              'Belum ada tugas di sini',
-              'Coba filter lain atau buat tugas dari halaman proyek.',
-              icon: LucideIcons.clipboardCheck,
+            const Surface(
+              child: EmptyState(
+                'Belum ada tugas di sini',
+                'Coba filter lain atau buat tugas dari halaman proyek.',
+                icon: LucideIcons.clipboardCheck,
+              ),
             ),
           ...list.map(
             (t) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.only(bottom: 10),
               child: TaskTile(t, controller: c),
             ),
           ),
@@ -130,10 +173,44 @@ class _TasksState extends ConsumerState<TasksScreen> {
   }
 }
 
+class _TaskMiniStat extends StatelessWidget {
+  final String value, label;
+  final Color tint, accent;
+  const _TaskMiniStat(this.value, this.label, this.tint, this.accent);
+
+  @override
+  Widget build(BuildContext context) => Surface(
+    color: tint,
+    radius: 16,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(value, style: T.number.copyWith(color: accent, fontSize: 22)),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: T.caption.copyWith(color: C.ink2),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    ),
+  );
+}
+
 class TaskFormScreen extends ConsumerStatefulWidget {
   final String projectId;
   final String? taskId;
-  const TaskFormScreen(this.projectId, {super.key, this.taskId});
+  final String? initialTitle;
+  final String? initialDescription;
+  const TaskFormScreen(
+    this.projectId, {
+    super.key,
+    this.taskId,
+    this.initialTitle,
+    this.initialDescription,
+  });
   @override
   ConsumerState<TaskFormScreen> createState() => _TaskFormState();
 }
@@ -144,6 +221,7 @@ class _TaskFormState extends ConsumerState<TaskFormScreen> {
   List<String> assignees = [];
   String? reviewer, error;
   DateTime? due;
+  DateTime? _initialDue;
   bool busy = false;
   int? version;
   @override
@@ -156,7 +234,17 @@ class _TaskFormState extends ConsumerState<TaskFormScreen> {
       assignees = stringsOf(t, 'assigneeIds');
       reviewer = t['reviewerId'];
       due = dateOf(t, 'dueAt');
+      _initialDue = due;
       version = t['version'];
+    } else {
+      if (widget.initialTitle != null &&
+          widget.initialTitle!.trim().isNotEmpty) {
+        title.text = widget.initialTitle!.trim();
+      }
+      if (widget.initialDescription != null &&
+          widget.initialDescription!.trim().isNotEmpty) {
+        description.text = widget.initialDescription!.trim();
+      }
     }
   }
 
@@ -169,6 +257,13 @@ class _TaskFormState extends ConsumerState<TaskFormScreen> {
 
   Future<void> save() async {
     if (!form.currentState!.validate()) return;
+    if (due != _initialDue && isPastDate(due)) {
+      setState(
+        () =>
+            error = 'Tenggat tidak boleh menggunakan tanggal yang sudah lewat.',
+      );
+      return;
+    }
     if (assignees.isEmpty || reviewer == null) {
       setState(
         () =>
@@ -217,18 +312,23 @@ class _TaskFormState extends ConsumerState<TaskFormScreen> {
       );
     }
     final members = stringsOf(p, 'memberIds');
+    final reviewerOptions =
+        members.where((id) => !assignees.contains(id)).toList();
+    final safeReviewer =
+        reviewer != null && reviewerOptions.contains(reviewer)
+            ? reviewer
+            : null;
     return PageFrame(
       title: widget.taskId == null ? 'Tugas baru' : 'Edit tugas',
       child: ContentList(
         children: [
-          Text(
+          const PageHeader(
             'Bagi peran.\nTentukan langkah.',
-            style: Theme.of(context).textTheme.headlineMedium,
+            subtitle: 'Pastikan setiap tugas punya penanggung jawab & reviewer.',
           ),
-          const SizedBox(height: 24),
           if (error != null) ...[
             ErrorBanner(error!),
-            const SizedBox(height: 16),
+            const SizedBox(height: S.lg),
           ],
           Form(
             key: form,
@@ -239,7 +339,7 @@ class _TaskFormState extends ConsumerState<TaskFormScreen> {
                   decoration: const InputDecoration(labelText: 'Judul tugas'),
                   validator: (v) => requiredText(v, max: 160),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: S.md),
                 TextFormField(
                   controller: description,
                   decoration: const InputDecoration(
@@ -253,38 +353,53 @@ class _TaskFormState extends ConsumerState<TaskFormScreen> {
             ),
           ),
           const SectionTitle('Penanggung jawab'),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children:
-                members
-                    .map(
-                      (id) => FilterChip(
-                        avatar: Avatar(c.name(id), size: 24),
-                        label: Text(c.name(id)),
-                        selected: assignees.contains(id),
-                        onSelected:
-                            (v) => setState(() {
-                              v ? assignees.add(id) : assignees.remove(id);
-                              if (assignees.contains(reviewer)) reviewer = null;
-                            }),
-                      ),
-                    )
-                    .toList(),
+          Surface(
+            padding: const EdgeInsets.all(14),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children:
+                  members
+                      .map(
+                        (id) => FilterChip(
+                          avatar: Avatar(
+                            c.name(id),
+                            size: 24,
+                            avatarDataUrl: c.avatarOf(id),
+                          ),
+                          label: Text(c.name(id)),
+                          selected: assignees.contains(id),
+                          selectedColor: C.sky,
+                          checkmarkColor: C.blue,
+                          labelStyle: TextStyle(
+                            color: assignees.contains(id) ? C.blue : C.ink,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                          onSelected:
+                              (v) => setState(() {
+                                v ? assignees.add(id) : assignees.remove(id);
+                                if (assignees.contains(reviewer)) {
+                                  reviewer = null;
+                                }
+                              }),
+                        ),
+                      )
+                      .toList(),
+            ),
           ),
           const SectionTitle('Rekan reviewer'),
           const Text(
             'Pilih anggota lain agar hasil kerja mendapat sudut pandang baru.',
-            style: TextStyle(color: C.muted, fontSize: 13),
+            style: T.small,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: S.md),
           DropdownButtonFormField<String>(
-            value: reviewer,
+            value: safeReviewer,
             isExpanded: true,
             decoration: const InputDecoration(labelText: 'Pilih reviewer'),
             items:
-                members
-                    .where((id) => !assignees.contains(id))
+                reviewerOptions
                     .map(
                       (id) =>
                           DropdownMenuItem(value: id, child: Text(c.name(id))),
@@ -294,18 +409,22 @@ class _TaskFormState extends ConsumerState<TaskFormScreen> {
           ),
           if (members.length < 2)
             const Padding(
-              padding: EdgeInsets.only(top: 12),
+              padding: EdgeInsets.only(top: S.md),
               child: ErrorBanner(
                 'Undang satu rekan ke proyek sebelum membuat tugas dengan peer review.',
               ),
             ),
           const SectionTitle('Tenggat'),
           Surface(
+            padding: const EdgeInsets.all(14),
             onTap: () async {
+              final minimumDate = today();
+              final suggestedDate = DateTime.now().add(const Duration(days: 3));
               final d = await showDatePicker(
                 context: context,
-                initialDate: due ?? DateTime.now().add(const Duration(days: 3)),
-                firstDate: DateTime(2020),
+                initialDate:
+                    due != null && !isPastDate(due) ? due! : suggestedDate,
+                firstDate: minimumDate,
                 lastDate: DateTime(2100),
               );
               if (d != null) {
@@ -314,20 +433,32 @@ class _TaskFormState extends ConsumerState<TaskFormScreen> {
             },
             child: Row(
               children: [
-                const AppIcon(LucideIcons.calendarDays, color: C.blue),
-                const SizedBox(width: 12),
+                const IconBadge(
+                  LucideIcons.calendarDays,
+                  tint: C.sky,
+                  iconColor: C.blue,
+                  size: 38,
+                ),
+                const SizedBox(width: S.md),
                 Expanded(
-                  child: Text(
-                    due == null
-                        ? 'Pilih tanggal (opsional)'
-                        : dateLabel(due!.toIso8601String()),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Batas waktu', style: T.caption),
+                      Text(
+                        due == null
+                            ? 'Pilih tanggal (opsional)'
+                            : dateLabel(due!.toIso8601String()),
+                        style: T.bodyStrong,
+                      ),
+                    ],
                   ),
                 ),
-                const AppIcon(LucideIcons.chevronRight, size: 18),
+                const Icon(LucideIcons.chevronRight, size: 18, color: C.subtle),
               ],
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: S.xxl),
           PrimaryButton('Simpan tugas', busy: busy, onPressed: save),
         ],
       ),
@@ -369,12 +500,14 @@ class _TaskDetailState extends ConsumerState<TaskDetailScreen> {
         ),
       );
     }
+    final status = textOf(t, 'status');
+    final (tint, accent, statusIcon) = statusVisual(status);
     final assignee = stringsOf(t, 'assigneeIds').contains(c.uid);
     final active = c.project(t['projectId'])?['status'] == 'active';
     final submissions = rowsOf(t, 'submissions').reversed.toList(),
         reviews = rowsOf(t, 'reviews'),
         updates = rowsOf(t, 'updates');
-    final stage = switch (t['status']) {
+    final stage = switch (status) {
       'todo' => 0,
       'in_progress' || 'revision_requested' => 1,
       'submitted' => 2,
@@ -384,107 +517,107 @@ class _TaskDetailState extends ConsumerState<TaskDetailScreen> {
     return PageFrame(
       title: 'Detail tugas',
       actions: [
-        if (c.owner(t['projectId']) &&
-            ['todo', 'in_progress', 'revision_requested'].contains(t['status']))
+        if (active &&
+            c.owner(t['projectId']) &&
+            ['todo', 'in_progress', 'revision_requested'].contains(status))
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: CircleAction(
-              LucideIcons.pencil,
-              label: 'Edit tugas',
-              onTap: () => context.push('/tasks/${t['id']}/edit'),
+            child: IconButton(
+              tooltip: 'Edit tugas',
+              onPressed: () => context.push('/tasks/${t['id']}/edit'),
+              style: IconButton.styleFrom(
+                minimumSize: const Size(40, 40),
+                backgroundColor: Colors.white,
+                side: const BorderSide(color: C.line),
+              ),
+              icon: const GeoIcon(GeoIconKind.pencil, size: 20),
             ),
           ),
       ],
       child: ContentList(
         onRefresh: c.refresh,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: C.sky,
-              borderRadius: BorderRadius.circular(30),
-            ),
+          // Hero Status Card
+          Surface(
+            color: tint == C.panel ? C.sky : tint,
+            radius: 24,
+            padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Pill(
                   statusLabel(t),
                   color: Colors.white,
-                  icon: LucideIcons.circleDot,
+                  foreground: accent,
+                  icon: statusIcon,
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: S.md),
                 Text(
                   textOf(t, 'title'),
-                  style: Theme.of(context).textTheme.headlineLarge,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: T.h1,
                 ),
                 if (textOf(t, 'description').isNotEmpty) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: S.sm),
                   Text(
                     textOf(t, 'description'),
-                    style: const TextStyle(fontSize: 15, color: C.ink),
+                    style: T.body.copyWith(color: C.ink2),
                   ),
                 ],
-                const SizedBox(height: 24),
-                const Text(
-                  'ALUR KERJA',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.5,
-                    color: C.muted,
-                  ),
-                ),
-                const SizedBox(height: 10),
+                const SizedBox(height: S.lg),
+                const Text('ALUR KERJA', style: T.overline),
+                const SizedBox(height: S.sm),
                 Row(
                   children: [
-                    _stage('01', 'Kerjakan', stage >= 1),
+                    _stage('01', 'Kerjakan', stage >= 1, accent),
                     const SizedBox(width: 6),
-                    _stage('02', 'Kirim bukti', stage >= 2),
+                    _stage('02', 'Kirim bukti', stage >= 2, accent),
                     const SizedBox(width: 6),
-                    _stage('03', 'Review', stage >= 3),
+                    _stage('03', 'Review', stage >= 3, accent),
                   ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _fact(
-                  LucideIcons.calendarDays,
+          const SizedBox(height: S.md),
+
+          // Task Metadata Card
+          Surface(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('RINGKASAN TUGAS', style: T.overline),
+                const SizedBox(height: 6),
+                _fact(
+                  GeoIconKind.calendar,
                   'Tenggat',
                   dateLabel(t['dueAt']),
-                  C.panel,
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _fact(
-                  LucideIcons.users,
+                const Divider(),
+                _fact(
+                  GeoIconKind.users,
                   'Dikerjakan',
                   stringsOf(t, 'assigneeIds').map(c.name).join(', '),
-                  C.lime,
                 ),
-              ),
-            ],
+                const Divider(),
+                _fact(
+                  GeoIconKind.review,
+                  'Ditinjau oleh',
+                  c.name(t['reviewerId']),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          _fact(
-            LucideIcons.messageCircle,
-            'Ditinjau oleh',
-            c.name(t['reviewerId']),
-            C.lavender,
-          ),
+
           if (error != null) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: S.md),
             ErrorBanner(error!),
           ],
           if (active) ...[
-            const SizedBox(height: 24),
-            if (assignee && t['status'] == 'todo')
+            const SizedBox(height: S.lg),
+            if (assignee && status == 'todo')
               PrimaryButton(
                 'Mulai kerjakan',
                 busy: c.busy,
@@ -492,12 +625,9 @@ class _TaskDetailState extends ConsumerState<TaskDetailScreen> {
                 onPressed: () => start(t),
               ),
             if (assignee &&
-                [
-                  'in_progress',
-                  'revision_requested',
-                ].contains(t['status'])) ...[
+                ['in_progress', 'revision_requested'].contains(status)) ...[
               PrimaryButton(
-                t['status'] == 'revision_requested'
+                status == 'revision_requested'
                     ? 'Kirim ulang bukti'
                     : 'Kirim bukti kerja',
                 icon: LucideIcons.imagePlus,
@@ -505,52 +635,58 @@ class _TaskDetailState extends ConsumerState<TaskDetailScreen> {
               ),
               const SizedBox(height: 10),
             ],
-            if (assignee && !['done', 'cancelled'].contains(t['status']))
-              OutlinedButton.icon(
-                onPressed: () => context.push('/tasks/${t['id']}/update'),
-                icon: const AppIcon(LucideIcons.pencil, size: 18),
-                label: const Text('Catat progres / kendala'),
+            if (assignee && !['done', 'cancelled'].contains(status))
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => context.push('/tasks/${t['id']}/update'),
+                  icon: const Icon(LucideIcons.pencil, size: 17),
+                  label: const Text('Catat progres / kendala'),
+                ),
               ),
-            if (t['reviewerId'] == c.uid && t['status'] == 'submitted')
+            if (t['reviewerId'] == c.uid && status == 'submitted') ...[
+              if (assignee) const SizedBox(height: 10),
               PrimaryButton(
                 'Tinjau hasil kerja',
-                icon: LucideIcons.messageSquare,
+                icon: LucideIcons.checkCircle2,
                 onPressed: () => context.push('/tasks/${t['id']}/review'),
               ),
+            ],
           ],
+
           SectionTitle('Bukti kerja (${submissions.length})'),
           if (submissions.isEmpty)
             _emptyTrail(
-              LucideIcons.image,
+              GeoIconKind.camera,
               'Belum ada bukti',
               'Tambahkan foto hasil kerja atau tautan saat siap ditinjau.',
             ),
           ...submissions.map(
             (s) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.only(bottom: 10),
               child: Surface(
-                color: C.panel,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        const AppIcon(
+                        const IconBadge(
                           LucideIcons.image,
-                          color: C.blue,
-                          size: 20,
+                          tint: C.sky,
+                          iconColor: C.blue,
+                          size: 32,
                         ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             c.name(s['submittedBy']),
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                            style: T.bodyStrong,
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 10),
-                    Text(textOf(s, 'note')),
+                    Text(textOf(s, 'note'), style: T.body),
                     const SizedBox(height: 8),
                     ...rowsOf(s, 'evidenceFiles').map(
                       (file) => Padding(
@@ -575,7 +711,7 @@ class _TaskDetailState extends ConsumerState<TaskDetailScreen> {
                             }
                           }
                         },
-                        icon: const AppIcon(LucideIcons.externalLink, size: 16),
+                        icon: const Icon(LucideIcons.externalLink, size: 16),
                         label: Text(
                           textOf(link, 'label', 'Buka bukti'),
                           overflow: TextOverflow.ellipsis,
@@ -590,23 +726,24 @@ class _TaskDetailState extends ConsumerState<TaskDetailScreen> {
                           : s['status'] == 'superseded'
                           ? 'Versi sebelumnya'
                           : 'Menunggu review'} · ${dateLabel(s['submittedAt'], time: true)}',
-                      style: const TextStyle(fontSize: 11, color: C.muted),
+                      style: T.caption,
                     ),
                   ],
                 ),
               ),
             ),
           ),
+
           const SectionTitle('Riwayat masukan'),
           if (reviews.isEmpty)
             _emptyTrail(
-              LucideIcons.messageSquare,
+              GeoIconKind.review,
               'Belum ada masukan',
               'Komentar reviewer akan tersimpan di sini.',
             ),
           ...reviews.reversed.map(
             (r) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: 10),
               child: Surface(
                 color: r['decision'] == 'approved' ? C.lime : C.amber,
                 child: Column(
@@ -614,30 +751,31 @@ class _TaskDetailState extends ConsumerState<TaskDetailScreen> {
                   children: [
                     Text(
                       '${c.name(r['reviewerId'])} · ${r['decision'] == 'approved' ? 'Menyetujui' : 'Meminta revisi'}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: T.bodyStrong,
                     ),
-                    const SizedBox(height: 10),
-                    Text(textOf(r, 'comment')),
                     const SizedBox(height: 8),
+                    Text(textOf(r, 'comment'), style: T.body),
+                    const SizedBox(height: 6),
                     Text(
                       dateLabel(r['createdAt'], time: true),
-                      style: const TextStyle(color: C.muted, fontSize: 11),
+                      style: T.caption,
                     ),
                   ],
                 ),
               ),
             ),
           ),
+
           const SectionTitle('Catatan perjalanan'),
           if (updates.isEmpty)
             _emptyTrail(
-              LucideIcons.pencil,
+              GeoIconKind.pencil,
               'Belum ada catatan',
               'Ceritakan langkah kecil atau kendala selama mengerjakan.',
             ),
           ...updates.reversed.map(
             (u) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: 10),
               child: Surface(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -645,13 +783,14 @@ class _TaskDetailState extends ConsumerState<TaskDetailScreen> {
                     Pill(
                       u['kind'] == 'blocker' ? 'Perlu bantuan' : 'Pembaruan',
                       color: u['kind'] == 'blocker' ? C.amber : C.sky,
+                      foreground: u['kind'] == 'blocker' ? C.orange : C.blue,
                     ),
-                    const SizedBox(height: 10),
-                    Text(textOf(u, 'message')),
                     const SizedBox(height: 8),
+                    Text(textOf(u, 'message'), style: T.body),
+                    const SizedBox(height: 6),
                     Text(
                       '${c.name(u['authorId'])} · ${dateLabel(u['createdAt'], time: true)}',
-                      style: const TextStyle(fontSize: 11, color: C.muted),
+                      style: T.caption,
                     ),
                   ],
                 ),
@@ -663,88 +802,93 @@ class _TaskDetailState extends ConsumerState<TaskDetailScreen> {
     );
   }
 
-  Widget _stage(String number, String label, bool completed) => Expanded(
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 9),
-      decoration: BoxDecoration(
-        color: completed ? C.blue : Colors.white.withValues(alpha: .72),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            number,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: completed ? Colors.white : C.muted,
-            ),
+  Widget _stage(String number, String label, bool completed, Color accent) =>
+      Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: completed ? accent : Colors.white.withValues(alpha: .78),
+            borderRadius: BorderRadius.circular(14),
           ),
-          const SizedBox(height: 3),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: completed ? Colors.white : C.ink,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                number,
+                style: T.overline.copyWith(
+                  letterSpacing: 0.6,
+                  color: completed ? Colors.white.withValues(alpha: .85) : C.muted,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: T.caption.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: completed ? Colors.white : C.ink,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      );
+
+  Widget _fact(
+    GeoIconKind icon,
+    String label,
+    String value,
+  ) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: Row(
+      children: [
+        GeoIcon(icon, size: 28),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label, style: T.caption),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: T.bodyStrong,
+              ),
+            ],
+          ),
+        ),
+      ],
     ),
   );
 
-  Widget _fact(IconData icon, String label, String value, Color color) =>
-      Surface(
-        color: color,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AppIcon(icon, size: 19, color: C.blue),
-            const SizedBox(height: 12),
-            Text(label, style: const TextStyle(color: C.muted, fontSize: 12)),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
-          ],
+  Widget _emptyTrail(
+    GeoIconKind icon,
+    String title,
+    String description,
+  ) => Surface(
+    padding: const EdgeInsets.all(14),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        GeoIcon(icon, size: 30),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: T.bodyStrong),
+              const SizedBox(height: 2),
+              Text(description, style: T.caption),
+            ],
+          ),
         ),
-      );
-
-  Widget _emptyTrail(IconData icon, String title, String description) =>
-      Surface(
-        color: C.panel,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AppIcon(icon, size: 20, color: C.blue),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    description,
-                    style: const TextStyle(color: C.muted, fontSize: 13),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 }
 
 class EvidencePhotoTile extends ConsumerStatefulWidget {
@@ -788,7 +932,7 @@ class _EvidencePhotoTileState extends ConsumerState<EvidencePhotoTile> {
       if (snapshot.hasError) {
         return const Text(
           'Foto belum dapat dimuat. Tarik layar untuk mencoba lagi.',
-          style: TextStyle(color: C.muted, fontSize: 13),
+          style: T.small,
         );
       }
       if (!snapshot.hasData) {
@@ -833,7 +977,7 @@ class _EvidencePhotoTileState extends ConsumerState<EvidencePhotoTile> {
                     ),
               ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(16),
             child: Image.memory(
               bytes,
               width: double.infinity,
@@ -858,23 +1002,34 @@ class TaskActionScreen extends ConsumerStatefulWidget {
 class _TaskActionState extends ConsumerState<TaskActionScreen> {
   final form = GlobalKey<FormState>();
   final note = TextEditingController(), url = TextEditingController();
-  String kind = 'progress', decision = 'approved';
+  String kind = 'progress';
+  String? decision;
+  final revision = TextEditingController();
+  static const criteria = [
+    'Bukti hasil kerja dapat dibuka',
+    'Hasil mencakup semua bagian tugas',
+    'Hasil sesuai definisi selesai',
+  ];
+  final checked = <String>{};
   bool busy = false;
   String? error;
   Uint8List? photoBytes;
   EvidencePhotoType? photoType;
   String? photoName;
+  ImageSource? photoSource;
+  DateTime? photoCapturedAt;
   @override
   void dispose() {
     note.dispose();
     url.dispose();
+    revision.dispose();
     super.dispose();
   }
 
-  Future<void> choosePhoto() async {
+  Future<void> choosePhoto(ImageSource source) async {
     try {
       final chosen = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
+        source: source,
         maxWidth: 1800,
         imageQuality: 82,
         requestFullMetadata: false,
@@ -894,12 +1049,18 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
         photoBytes = bytes;
         photoType = type;
         photoName = chosen.name;
+        photoSource = source;
+        photoCapturedAt = DateTime.now();
         error = null;
       });
     } catch (_) {
       if (mounted) {
         setState(
-          () => error = 'Foto belum dapat dipilih. Coba lagi dari galeri.',
+          () =>
+              error =
+                  source == ImageSource.camera
+                      ? 'Kamera belum dapat dibuka. Periksa izin kamera atau pilih dari galeri.'
+                      : 'Foto belum dapat dipilih. Coba lagi dari galeri.',
         );
       }
     }
@@ -909,6 +1070,24 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
     if (!form.currentState!.validate()) return;
     final review = widget.action == 'review';
     final evidence = widget.action == 'evidence';
+    if (review &&
+        (decision == null ||
+            (decision == 'approved' && checked.length != criteria.length))) {
+      setState(
+        () =>
+            error =
+                decision == null
+                    ? 'Pilih keputusan review.'
+                    : 'Centang semua kriteria sebelum menyetujui hasil.',
+      );
+      return;
+    }
+    final reviewComment = [
+      note.text.trim(),
+      'Checklist:\n${criteria.map((item) => '${checked.contains(item) ? '✓' : '○'} $item').join('\n')}',
+      if (decision == 'revision_requested')
+        'Perbaikan yang diminta:\n${revision.text.trim()}',
+    ].join('\n\n');
     final link = normalizeEvidenceLink(url.text);
     if (evidence && photoBytes == null && link.isEmpty) {
       setState(() => error = 'Pilih foto atau isi tautan bukti kerja.');
@@ -922,6 +1101,7 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
         )) {
       return;
     }
+    if (!mounted) return;
     setState(() {
       busy = true;
       error = null;
@@ -929,23 +1109,13 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
     try {
       final c = ref.read(controllerProvider);
       String? photoPath;
-      String? photoDataUrl;
       if (evidence && photoBytes != null && photoType != null) {
-        if (c.demo) {
-          require(
-            photoBytes!.length <= 700 * 1024,
-            'Di mode demo, foto maksimal 700 KB. Gunakan akun Supabase untuk foto hingga 5 MB.',
-          );
-          photoDataUrl =
-              'data:${photoType!.mimeType};base64,${base64Encode(photoBytes!)}';
-        } else {
-          photoPath = await c.uploadEvidencePhoto(
-            projectId: textOf(t, 'projectId'),
-            taskId: textOf(t, 'id'),
-            bytes: photoBytes!,
-            type: photoType!,
-          );
-        }
+        photoPath = await c.uploadEvidencePhoto(
+          projectId: textOf(t, 'projectId'),
+          taskId: textOf(t, 'id'),
+          bytes: photoBytes!,
+          type: photoType!,
+        );
       }
       await c.act(
         review
@@ -959,12 +1129,11 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
           'version': t['version'],
           'url': link,
           'photoPath': photoPath,
-          'photoDataUrl': photoDataUrl,
           'note': note.text.trim(),
           'message': note.text.trim(),
           'kind': kind,
-          'decision': decision,
-          'comment': note.text.trim(),
+          if (review) 'decision': decision,
+          'comment': review ? reviewComment : note.text.trim(),
         },
       );
       if (mounted) {
@@ -1006,7 +1175,8 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
         review
             ? t['reviewerId'] == c.uid &&
                 t['status'] == 'submitted' &&
-                (submission?['submittedBy'] != c.uid)
+                submission != null &&
+                submission['submittedBy'] != c.uid
             : stringsOf(t, 'assigneeIds').contains(c.uid);
     if (!allowed) {
       return const PageFrame(
@@ -1026,36 +1196,46 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
               : 'Catat pembaruan',
       child: ContentList(
         children: [
-          Text(
+          PageHeader(
             textOf(t, 'title'),
-            style: Theme.of(context).textTheme.headlineMedium,
+            subtitle:
+                review
+                    ? 'Beri masukan yang spesifik dan membantu.'
+                    : evidence
+                    ? 'Jejak kecil untuk hasil kerja yang berarti.'
+                    : 'Ceritakan perkembangan atau hal yang membutuhkan bantuan.',
           ),
-          const SizedBox(height: 12),
-          Text(
-            review
-                ? 'Beri masukan yang spesifik dan membantu.'
-                : evidence
-                ? 'Jejak kecil untuk hasil kerja yang berarti.'
-                : 'Ceritakan perkembangan atau hal yang membutuhkan bantuan.',
-            style: const TextStyle(color: C.muted, fontSize: 16),
-          ),
-          const SizedBox(height: 24),
           if (error != null) ...[
             ErrorBanner(error!),
-            const SizedBox(height: 16),
+            const SizedBox(height: S.lg),
           ],
           if (review && submission != null) ...[
+            if (textOf(t, 'description').isNotEmpty) ...[
+              const SectionTitle('Definisi selesai'),
+              Surface(child: Text(textOf(t, 'description'), style: T.body)),
+              const SizedBox(height: S.md),
+            ],
+            if (rowsOf(t, 'reviews').isNotEmpty) ...[
+              const SectionTitle('Masukan terakhir'),
+              Surface(
+                color: C.amber,
+                child: Text(
+                  textOf(rowsOf(t, 'reviews').last, 'comment'),
+                  style: T.body,
+                ),
+              ),
+              const SizedBox(height: S.md),
+            ],
             Surface(
-              color: C.panel,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Dikirim ${c.name(submission['submittedBy'])}',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    'Dikirim ${c.name(submission['submittedBy'])} · ${dateLabel(submission['submittedAt'], time: true)}',
+                    style: T.bodyStrong,
                   ),
                   const SizedBox(height: 8),
-                  Text(textOf(submission, 'note')),
+                  Text(textOf(submission, 'note'), style: T.body),
                   ...rowsOf(submission, 'evidenceFiles').map(
                     (file) => Padding(
                       padding: const EdgeInsets.only(top: 12),
@@ -1072,32 +1252,72 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
                           );
                         }
                       },
-                      icon: const AppIcon(LucideIcons.externalLink, size: 18),
+                      icon: const Icon(LucideIcons.externalLink, size: 16),
                       label: const Text('Buka bukti kerja'),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            RadioListTile<String>(
-              value: 'approved',
-              groupValue: decision,
-              onChanged: (v) => setState(() => decision = v!),
-              title: const Text('Setujui, hasil sudah sesuai'),
-              contentPadding: EdgeInsets.zero,
+            const SectionTitle('Checklist hasil kerja'),
+            Surface(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Column(
+                children: [
+                  for (final item in criteria)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(item, style: T.body),
+                      value: checked.contains(item),
+                      onChanged:
+                          busy
+                              ? null
+                              : (selected) => setState(() {
+                                if (selected == true) {
+                                  checked.add(item);
+                                } else {
+                                  checked.remove(item);
+                                }
+                              }),
+                    ),
+                ],
+              ),
             ),
-            RadioListTile<String>(
-              value: 'revision_requested',
-              groupValue: decision,
-              onChanged: (v) => setState(() => decision = v!),
-              title: const Text('Minta revisi dengan masukan'),
-              contentPadding: EdgeInsets.zero,
+            const SectionTitle('Keputusan'),
+            Surface(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Column(
+                children: [
+                  RadioListTile<String>(
+                    value: 'approved',
+                    groupValue: decision,
+                    onChanged:
+                        busy ? null : (v) => setState(() => decision = v),
+                    title: const Text(
+                      'Setujui, hasil sudah sesuai',
+                      style: T.bodyStrong,
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const Divider(),
+                  RadioListTile<String>(
+                    value: 'revision_requested',
+                    groupValue: decision,
+                    onChanged:
+                        busy ? null : (v) => setState(() => decision = v),
+                    title: const Text(
+                      'Minta revisi dengan masukan',
+                      style: T.bodyStrong,
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
             ),
           ],
           if (!review && !evidence)
             Wrap(
-              spacing: 10,
+              spacing: 8,
               children:
                   ['progress', 'blocker']
                       .map(
@@ -1106,12 +1326,19 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
                             v == 'progress' ? 'Progres' : 'Kendala / bantuan',
                           ),
                           selected: kind == v,
+                          showCheckmark: false,
+                          selectedColor: C.blue,
+                          labelStyle: TextStyle(
+                            color: kind == v ? Colors.white : C.ink2,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
                           onSelected: (_) => setState(() => kind = v),
                         ),
                       )
                       .toList(),
             ),
-          const SizedBox(height: 16),
+          const SizedBox(height: S.md),
           Form(
             key: form,
             child: Column(
@@ -1122,28 +1349,34 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const AppIcon(
-                          LucideIcons.imagePlus,
-                          size: 28,
-                          color: C.blue,
+                        Row(
+                          children: [
+                            const IconBadge(
+                              LucideIcons.imagePlus,
+                              tint: Colors.white,
+                              iconColor: C.blue,
+                              size: 40,
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Foto hasil kerja', style: T.title),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Hanya dapat dilihat anggota proyek.',
+                                    style: T.caption,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Foto hasil kerja',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Pilih dari galeri. Foto hanya dapat dilihat anggota proyek.',
-                          style: TextStyle(color: C.muted, fontSize: 13),
-                        ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: S.md),
                         if (photoBytes != null) ...[
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(14),
                             child: Image.memory(
                               photoBytes!,
                               width: double.infinity,
@@ -1153,11 +1386,11 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          Text(
-                            photoName ?? 'Foto terpilih',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
+                          Pill(
+                            photoSource == ImageSource.camera
+                                ? 'Foto kamera · ${dateLabel(photoCapturedAt?.toIso8601String(), time: true)}'
+                                : 'Galeri · ${photoName ?? 'Foto terpilih'}',
+                            color: Colors.white,
                           ),
                           TextButton.icon(
                             onPressed:
@@ -1165,27 +1398,55 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
                                   photoBytes = null;
                                   photoType = null;
                                   photoName = null;
+                                  photoSource = null;
+                                  photoCapturedAt = null;
                                 }),
-                            icon: const AppIcon(LucideIcons.x, size: 16),
+                            icon: const Icon(LucideIcons.x, size: 16),
                             label: const Text('Hapus pilihan'),
                           ),
                         ] else
-                          OutlinedButton.icon(
-                            onPressed: busy ? null : choosePhoto,
-                            icon: const AppIcon(LucideIcons.upload, size: 18),
-                            label: const Text('Pilih foto'),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              FilledButton.icon(
+                                onPressed:
+                                    busy
+                                        ? null
+                                        : () => choosePhoto(ImageSource.camera),
+                                icon: const Icon(
+                                  LucideIcons.camera,
+                                  size: 17,
+                                  color: Colors.white,
+                                ),
+                                label: const Text('Ambil foto'),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed:
+                                    busy
+                                        ? null
+                                        : () =>
+                                            choosePhoto(ImageSource.gallery),
+                                icon: const Icon(LucideIcons.upload, size: 17),
+                                label: const Text('Dari galeri'),
+                              ),
+                            ],
                           ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: S.lg),
                   TextFormField(
                     controller: url,
                     keyboardType: TextInputType.url,
                     decoration: const InputDecoration(
                       labelText: 'Tautan bukti (opsional)',
                       hintText: 'drive.google.com/...',
-                      prefixIcon: AppIcon(LucideIcons.link),
+                      prefixIcon: Icon(
+                        LucideIcons.link,
+                        size: 18,
+                        color: C.blue,
+                      ),
                     ),
                     validator:
                         (v) =>
@@ -1196,18 +1457,18 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
                                 ? null
                                 : 'Masukkan tautan web yang valid.',
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   const Text(
                     'Jika menambah tautan, atur akses dokumen di layanan asalnya. Kamu boleh mengirim foto tanpa tautan.',
-                    style: TextStyle(fontSize: 12, color: C.muted),
+                    style: T.caption,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: S.lg),
                 ],
                 TextFormField(
                   controller: note,
                   minLines: 4,
                   maxLines: 8,
-                  maxLength: 2000,
+                  maxLength: review ? 800 : 2000,
                   decoration: InputDecoration(
                     labelText:
                         review
@@ -1222,19 +1483,32 @@ class _TaskActionState extends ConsumerState<TaskActionScreen> {
                               ? (v?.length ?? 0) > 2000
                                   ? 'Maksimal 2000 karakter.'
                                   : null
-                              : requiredText(v, max: 2000),
+                              : requiredText(v, max: review ? 800 : 2000),
                 ),
+                if (review && decision == 'revision_requested') ...[
+                  const SizedBox(height: S.md),
+                  TextFormField(
+                    controller: revision,
+                    minLines: 2,
+                    maxLines: 5,
+                    maxLength: 800,
+                    decoration: const InputDecoration(
+                      labelText: 'Perbaikan yang harus dikerjakan',
+                    ),
+                    validator: (v) => requiredText(v, max: 800),
+                  ),
+                ],
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: S.xl),
           PrimaryButton(
             review
                 ? 'Simpan review'
                 : evidence
                 ? 'Kirim untuk direview'
                 : 'Simpan pembaruan',
-            icon: review ? LucideIcons.check : LucideIcons.send,
+            icon: review ? null : LucideIcons.send,
             onPressed: () => submit(t),
             busy: busy,
           ),

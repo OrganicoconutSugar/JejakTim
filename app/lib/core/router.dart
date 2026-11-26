@@ -10,6 +10,7 @@ import 'controller.dart';
 import 'design.dart';
 
 GoRouter makeRouter(AppController controller) {
+  GoRouter.optionURLReflectsImperativeAPIs = true;
   String? pendingInvite;
   GoRoute page(String path, Widget Function(GoRouterState) builder) => GoRoute(
     path: path,
@@ -86,7 +87,11 @@ GoRouter makeRouter(AppController controller) {
       ),
       page(
         '/projects/:id/tasks/new',
-        (s) => TaskFormScreen(s.pathParameters['id']!),
+        (s) => TaskFormScreen(
+          s.pathParameters['id']!,
+          initialTitle: s.uri.queryParameters['title'],
+          initialDescription: s.uri.queryParameters['desc'],
+        ),
       ),
       for (final tab
           in {

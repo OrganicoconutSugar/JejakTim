@@ -6,6 +6,7 @@ import 'package:jejaktim/core/controller.dart';
 import 'package:jejaktim/core/design.dart';
 import 'package:jejaktim/features/projects/project_screens.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'fake_repository.dart';
 
 void main() {
   setUpAll(() => initializeDateFormatting('id'));
@@ -18,7 +19,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       SharedPreferences.setMockInitialValues({});
       final controller = AppController(await SharedPreferences.getInstance());
-      await controller.enterDemo();
+      await controller.setSessionForTest(FakeTeamRepository(), 'nara');
 
       await tester.pumpWidget(
         ProviderScope(

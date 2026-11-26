@@ -1,29 +1,36 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
-import '../../core/illustrated_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/controller.dart';
 import '../../core/models.dart';
 import '../../core/design.dart';
+import '../../core/geo_icons.dart';
 import '../../core/layout.dart';
 import '../../core/evidence_photo.dart';
 
-Widget profilePhoto(Map<String, dynamic> profile, {double size = 80}) {
+Widget profilePhoto(Map<String, dynamic> profile, {double size = 72}) {
   final data = textOf(profile, 'avatarDataUrl');
   if (!data.startsWith('data:image/') || !data.contains(',')) {
     return Avatar(textOf(profile, 'name'), size: size);
   }
   try {
-    return ClipOval(
-      child: Image.memory(
-        base64Decode(data.split(',').last),
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2.5),
+      ),
+      child: ClipOval(
+        child: Image.memory(
+          base64Decode(data.split(',').last),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+        ),
       ),
     );
   } catch (_) {
@@ -36,94 +43,266 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = ref.watch(controllerProvider);
+    final activeProjects = c.projects.where((p) => p['status'] == 'active');
+    final activeIds = activeProjects.map((p) => p['id']).toSet();
+    final teamTasks =
+        c.tasks
+            .where(
+              (t) =>
+                  activeIds.contains(t['projectId']) &&
+                  t['status'] != 'cancelled',
+            )
+            .toList();
+    final completed = teamTasks.where((t) => t['status'] == 'done').length;
+    final reviews = teamTasks.where((t) => t['status'] == 'submitted').length;
+    final revisions =
+        teamTasks.where((t) => t['status'] == 'revision_requested').length;
+    final pct = teamTasks.isEmpty ? 0.0 : completed / teamTasks.length;
+
     return PageFrame(
       navIndex: 3,
       child: ContentList(
         children: [
-          const SizedBox(height: 8),
-          Text(
-            'Ruang untukmu.',
-            style: Theme.of(context).textTheme.headlineLarge,
-          ),
-          const SizedBox(height: 28),
+          // Gradient Profile Card
           Surface(
-            color: C.panel,
+            gradient: C.brandGradient,
+            radius: 24,
+            padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                profilePhoto(c.profile),
-                const SizedBox(height: 16),
-                Text(
-                  textOf(c.profile, 'name'),
-                  style: Theme.of(context).textTheme.headlineMedium,
-                  textAlign: TextAlign.center,
+                Row(
+                  children: [
+                    profilePhoto(c.profile, size: 68),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            textOf(c.profile, 'name', 'Pengguna'),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: T.h1.copyWith(color: Colors.white),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            textOf(c.profile, 'email'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: T.small.copyWith(
+                              color: Colors.white.withValues(alpha: .85),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: .2),
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            child: Text(
+                              textOf(c.profile, 'major', 'Mahasiswa'),
+                              style: T.caption.copyWith(color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  textOf(c.profile, 'email'),
-                  style: const TextStyle(color: C.muted),
-                ),
-                const SizedBox(height: 12),
-                Pill(
-                  textOf(c.profile, 'major', 'Mahasiswa'),
-                  color: Colors.white,
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: () => context.push('/profile/edit'),
-                  icon: const AppIcon(LucideIcons.pencil, size: 16),
-                  label: const Text('Edit profil'),
+                const SizedBox(height: S.lg),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: C.blue,
+                      minimumSize: const Size(48, 44),
+                    ),
+                    onPressed: () => context.push('/profile/edit'),
+                    icon: const GeoIcon(GeoIconKind.pencil, size: 18),
+                    label: const Text('Edit profil'),
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-          _item(
-            context,
-            LucideIcons.bell,
-            'Notifikasi',
-            '/profile/notifications',
-          ),
-          _item(
-            context,
-            LucideIcons.shieldCheck,
-            'Privasi & data',
-            '/profile/privacy',
-          ),
-          _item(
-            context,
-            LucideIcons.fileText,
-            'Ketentuan penggunaan',
-            '/profile/terms',
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const DimensionalIcon(
-              LucideIcons.compass,
-              color: C.purple,
-              size: 42,
+
+          const SectionTitle('Rangkuman kinerja tim'),
+          Surface(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ProfileStat(
+                        '${activeIds.length}',
+                        'Proyek aktif',
+                        C.blue,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _ProfileStat(
+                        '$completed/${teamTasks.length}',
+                        'Selesai',
+                        C.teal,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _ProfileStat(
+                        '$reviews',
+                        'Review',
+                        C.purple,
+                      ),
+                    ),
+                  ],
+                ),
+                if (teamTasks.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: pct,
+                      minHeight: 7,
+                      color: C.blue,
+                      backgroundColor: C.sky,
+                      semanticsLabel: 'Penyelesaian tugas proyek aktif',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 6,
+                    children: [
+                      Text(
+                        '$completed dari ${teamTasks.length} tugas selesai',
+                        style: T.caption,
+                      ),
+                      Text(
+                        '$revisions perlu revisi',
+                        style: T.caption.copyWith(
+                          color: revisions > 0 ? C.orange : C.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Belum ada tugas dalam proyek aktif.',
+                    style: T.small,
+                  ),
+                ],
+                const Divider(height: 22),
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => context.go('/insights'),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        GeoIcon(GeoIconKind.star, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Lihat Insight tim',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: C.blue,
+                            ),
+                          ),
+                        ),
+                        GeoIcon(GeoIconKind.chevronRight, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-            title: const Text('Lihat perkenalan aplikasi'),
-            trailing: const AppIcon(LucideIcons.chevronRight, size: 18),
-            onTap: () => context.push('/onboarding'),
           ),
-          const SizedBox(height: 20),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 52),
+
+          const SectionTitle('Pengaturan akun'),
+          Surface(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              children: [
+                _item(
+                  context,
+                  GeoIconKind.pencil,
+                  'Edit profil dan foto',
+                  '/profile/edit',
+                ),
+                const Divider(indent: 58),
+                _item(
+                  context,
+                  GeoIconKind.bell,
+                  'Notifikasi',
+                  '/profile/notifications',
+                ),
+                const Divider(indent: 58),
+                _item(
+                  context,
+                  GeoIconKind.shield,
+                  'Privasi & data',
+                  '/profile/privacy',
+                ),
+                const Divider(indent: 58),
+                _item(
+                  context,
+                  GeoIconKind.document,
+                  'Ketentuan penggunaan',
+                  '/profile/terms',
+                ),
+              ],
             ),
-            onPressed: () async {
-              await c.logout();
-              if (context.mounted) context.go('/auth/login');
-            },
-            icon: const AppIcon(LucideIcons.logOut, size: 18),
-            label: const Text('Keluar'),
           ),
-          const SizedBox(height: 28),
+
+          const SectionTitle('Bantuan'),
+          Surface(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 2,
+              ),
+              leading: const GeoIcon(GeoIconKind.compass, size: 28),
+              title: const Text('Lihat perkenalan aplikasi', style: T.bodyStrong),
+              trailing: const GeoIcon(GeoIconKind.chevronRight, size: 16),
+              onTap: () => context.push('/onboarding'),
+            ),
+          ),
+
+          const SizedBox(height: S.lg),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: C.blush,
+                foregroundColor: C.rose,
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              onPressed: () async {
+                await c.logout();
+                if (context.mounted) context.go('/auth/login');
+              },
+              icon: const GeoIcon(GeoIconKind.logout, size: 20),
+              label: const Text('Keluar'),
+            ),
+          ),
+          const SizedBox(height: S.xl),
           const Center(
             child: Text(
               'JejakTim AI · 1.0.0\nKerja bareng, kontribusi terlihat.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: C.muted),
+              style: T.caption,
             ),
           ),
         ],
@@ -133,22 +312,46 @@ class ProfileScreen extends ConsumerWidget {
 
   Widget _item(
     BuildContext context,
-    IconData icon,
+    GeoIconKind icon,
     String title,
     String route,
   ) => ListTile(
-    contentPadding: EdgeInsets.zero,
-    leading: DimensionalIcon(
-      icon,
-      color:
-          icon == LucideIcons.bell
-              ? const Color(0xFFDF8B2A)
-              : const Color(0xFF168B88),
-      size: 42,
-    ),
-    title: Text(title),
-    trailing: const AppIcon(LucideIcons.chevronRight, size: 18),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+    leading: GeoIcon(icon, size: 28),
+    title: Text(title, style: T.bodyStrong),
+    trailing: const GeoIcon(GeoIconKind.chevronRight, size: 16),
     onTap: () => context.push(route),
+  );
+}
+
+class _ProfileStat extends StatelessWidget {
+  final String value, label;
+  final Color accent;
+  const _ProfileStat(this.value, this.label, this.accent);
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+    decoration: BoxDecoration(
+      color: C.panel,
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: T.h2.copyWith(color: accent, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: T.caption,
+        ),
+      ],
+    ),
   );
 }
 
@@ -189,19 +392,24 @@ class _ProfileEditState extends ConsumerState<ProfileEditScreen> {
     title: 'Edit profil',
     child: ContentList(
       children: [
-        Center(
+        Surface(
+          padding: const EdgeInsets.all(20),
           child: Column(
             children: [
               avatarBytes == null
-                  ? profilePhoto(ref.watch(controllerProvider).profile)
+                  ? profilePhoto(
+                    ref.watch(controllerProvider).profile,
+                    size: 84,
+                  )
                   : ClipOval(
                     child: Image.memory(
                       avatarBytes!,
-                      width: 80,
-                      height: 80,
+                      width: 84,
+                      height: 84,
                       fit: BoxFit.cover,
                     ),
                   ),
+              const SizedBox(height: 8),
               TextButton.icon(
                 onPressed:
                     busy
@@ -234,18 +442,19 @@ class _ProfileEditState extends ConsumerState<ProfileEditScreen> {
                             }
                           }
                         },
-                icon: const AppIcon(LucideIcons.camera, size: 18),
+                icon: const GeoIcon(GeoIconKind.camera, size: 20),
                 label: const Text('Unggah foto profil'),
               ),
             ],
           ),
         ),
-        const Text(
-          'Kenalkan dirimu pada tim.',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 24),
-        if (error != null) ...[ErrorBanner(error!), const SizedBox(height: 16)],
+        const SizedBox(height: S.lg),
+        const Text('Kenalkan dirimu pada tim.', style: T.h2),
+        const SizedBox(height: S.md),
+        if (error != null) ...[
+          ErrorBanner(error!),
+          const SizedBox(height: S.md),
+        ],
         Form(
           key: form,
           child: Column(
@@ -255,7 +464,7 @@ class _ProfileEditState extends ConsumerState<ProfileEditScreen> {
                 decoration: const InputDecoration(labelText: 'Nama lengkap'),
                 validator: (v) => requiredText(v, max: 80),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: S.md),
               TextFormField(
                 controller: institution,
                 decoration: const InputDecoration(
@@ -263,7 +472,7 @@ class _ProfileEditState extends ConsumerState<ProfileEditScreen> {
                 ),
                 maxLength: 120,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: S.sm),
               TextFormField(
                 controller: major,
                 decoration: const InputDecoration(
@@ -274,7 +483,7 @@ class _ProfileEditState extends ConsumerState<ProfileEditScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: S.xl),
         PrimaryButton(
           'Simpan profil',
           busy: busy,
@@ -320,12 +529,14 @@ class PreferencesScreen extends ConsumerWidget {
       child: ContentList(
         children: [
           Surface(
-            color: C.panel,
+            color: C.sky,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Pengingat di aplikasi'),
+              title: const Text('Pengingat di aplikasi', style: T.bodyStrong),
               subtitle: const Text(
-                'Tampilkan permintaan review dan revisi tugas.',
+                'Tampilkan pengingat di halaman Notifikasi.',
+                style: T.caption,
               ),
               value: enabled,
               onChanged:
@@ -343,10 +554,55 @@ class PreferencesScreen extends ConsumerWidget {
                       },
             ),
           ),
-          const SizedBox(height: 20),
+          const SectionTitle('Jenis pengingat'),
+          Surface(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Column(
+              children: [
+                for (final (i, item) in const [
+                  (
+                    'review',
+                    'Permintaan review',
+                    'Hasil kerja yang menunggu tinjauanmu.',
+                  ),
+                  (
+                    'revision',
+                    'Permintaan revisi',
+                    'Tugasmu yang dikembalikan reviewer.',
+                  ),
+                  (
+                    'deadline',
+                    'Tenggat mendekat',
+                    'Tugasmu yang jatuh tempo hari ini atau tiga hari ke depan.',
+                  ),
+                ].indexed) ...[
+                  if (i > 0) const Divider(),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(item.$2, style: T.bodyStrong),
+                    subtitle: Text(item.$3, style: T.caption),
+                    value: c.notificationCategoryEnabled(item.$1),
+                    onChanged:
+                        enabled
+                            ? (v) async {
+                              try {
+                                await c.setNotificationCategory(item.$1, v);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  toast(context, errorMessage(e));
+                                }
+                              }
+                            }
+                            : null,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: S.md),
           const Text(
-            'Notifikasi tampil saat aplikasi dibuka. Push notification tidak diaktifkan pada versi lokal ini.',
-            style: TextStyle(color: C.muted),
+            'Pilihan jenis pengingat disimpan di perangkat ini.',
+            style: T.caption,
           ),
         ],
       ),
@@ -363,61 +619,78 @@ class PrivacyScreen extends ConsumerWidget {
       title: 'Privasi & data',
       child: ContentList(
         children: [
-          const AppIcon(LucideIcons.shieldCheck, size: 52, color: C.blue),
-          const SizedBox(height: 24),
-          Text(
+          const PageHeader(
             'Kolaborasi yang\nsaling menjaga.',
-            style: Theme.of(context).textTheme.headlineLarge,
+            subtitle: 'Transparan soal data yang digunakan di JejakTim.',
+            trailing: GeoIcon(GeoIconKind.shield, size: 46),
           ),
-          const SizedBox(height: 24),
-          const Text(
-            'Data seperlunya',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          ...const [
+            (
+              'Data seperlunya',
+              'JejakTim menggunakan nama, email untuk autentikasi, profil opsional, dan riwayat tugas. Tidak mengakses lokasi, kontak, NIM, atau nilai akademik.',
+            ),
+            (
+              'Bukti kerja tetap milikmu',
+              'Tautan bukti dibagikan kepada anggota proyek. Atur izin dokumen di penyedia aslinya. Isi dokumen tidak diambil atau dikirim ke AI.',
+            ),
+            (
+              'AI membantu, tim memutuskan',
+              'Analisis AI menggunakan agregat status tugas, tenggat relatif, dan kode anggota anonim setelah kamu menyetujuinya. Nama, email, foto, dan isi dokumen bukti tidak dikirim ke penyedia AI. Jika AI tidak aktif atau offline, aplikasi menampilkan analisis ritme lokal tanpa skor atau ranking.',
+            ),
+            (
+              'Laporan & penyimpanan',
+              'PDF dibuat di perangkat dari snapshot terotorisasi. Laporan yang sudah dibagikan berada di kendali penerima. Retensi cloud final belum ditetapkan; konfigurasi pengembangan memberi expiry snapshot 30 hari, tanpa menjanjikan penghapusan otomatis sebelum TTL diaktifkan.',
+            ),
+            (
+              'Foto profil',
+              'Foto profil tampil kepada anggota proyek yang sama. Kamu dapat menggantinya melalui Edit profil.',
+            ),
+            (
+              'Hapus akun',
+              'Ketua perlu menyelesaikan atau mengalihkan kepemilikan proyek lebih dahulu. Penghapusan mencabut keanggotaan dan menghapus profil; nama profil dihapus, sementara ID pelaku dan riwayat kerja tetap disimpan untuk menjaga konteks tim.',
+            ),
+          ].map(
+            (section) => Padding(
+              padding: const EdgeInsets.only(bottom: S.md),
+              child: Surface(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(section.$1, style: T.title),
+                    const SizedBox(height: 6),
+                    Text(section.$2, style: T.body),
+                  ],
+                ),
+              ),
+            ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'JejakTim menggunakan nama, email untuk autentikasi, profil opsional, dan riwayat tugas. Tidak mengakses lokasi, kontak, NIM, atau nilai akademik.',
-          ),
-          const SectionTitle('Bukti kerja tetap milikmu'),
-          const Text(
-            'Tautan bukti dibagikan kepada anggota proyek. Atur izin dokumen di penyedia aslinya. Isi dokumen tidak diambil atau dikirim ke AI.',
-          ),
-          const SectionTitle('AI membantu, tim memutuskan'),
-          const Text(
-            'Penyedia AI belum dikonfigurasi pada versi lokal. Saat diaktifkan, analisis menggunakan agregat minimal dengan persetujuan sebelum menjalankan. Tidak ada ranking, label moral, atau perubahan tugas otomatis.',
-          ),
-          const SectionTitle('Laporan & penyimpanan'),
-          const Text(
-            'PDF dibuat di perangkat dari snapshot terotorisasi. Laporan yang sudah dibagikan berada di kendali penerima. Retensi cloud final belum ditetapkan; konfigurasi pengembangan memberi expiry snapshot 30 hari, tanpa menjanjikan penghapusan otomatis sebelum TTL diaktifkan.',
-          ),
-          const SectionTitle('Foto profil'),
-          const Text(
-            'Foto profil tampil kepada anggota proyek yang sama. Kamu dapat menggantinya melalui Edit profil.',
-          ),
-          const SectionTitle('Hapus akun'),
-          const Text(
-            'Ketua perlu menyelesaikan atau mengalihkan kepemilikan proyek lebih dahulu. Penghapusan mencabut keanggotaan dan menghapus profil; nama profil dihapus, sementara ID pelaku dan riwayat kerja tetap disimpan untuk menjaga konteks tim.',
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: () async {
-              if (await confirm(
-                context,
-                'Hapus akun secara permanen?',
-                'Profil dan keanggotaan akan dihapus. Akun harus baru diautentikasi; masuk ulang jika diminta.',
-                label: 'Hapus akun',
-              )) {
-                try {
-                  await c.act('deleteAccount', {});
-                  await c.logout();
-                  if (context.mounted) context.go('/auth/login');
-                } catch (e) {
-                  if (context.mounted) toast(context, errorMessage(e));
+          const SizedBox(height: S.sm),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: C.blush,
+                foregroundColor: C.rose,
+              ),
+              onPressed: () async {
+                if (await confirm(
+                  context,
+                  'Hapus akun secara permanen?',
+                  'Profil dan keanggotaan akan dihapus. Akun harus baru diautentikasi; masuk ulang jika diminta.',
+                  label: 'Hapus akun',
+                )) {
+                  try {
+                    await c.act('deleteAccount', {});
+                    await c.logout();
+                    if (context.mounted) context.go('/auth/login');
+                  } catch (e) {
+                    if (context.mounted) toast(context, errorMessage(e));
+                  }
                 }
-              }
-            },
-            icon: const AppIcon(LucideIcons.trash2),
-            label: const Text('Hapus akun'),
+              },
+              icon: const GeoIcon(GeoIconKind.trash, size: 20),
+              label: const Text('Hapus akun'),
+            ),
           ),
         ],
       ),
@@ -433,25 +706,42 @@ class TermsScreen extends StatelessWidget {
     title: 'Ketentuan penggunaan',
     child: ContentList(
       children: [
-        Text(
-          'Kerja bersama, dengan tanggung jawab.',
-          style: Theme.of(context).textTheme.headlineLarge,
+        const PageHeader(
+          'Kerja bersama,\ndengan tanggung jawab.',
+          subtitle: 'Panduan ringkas penggunaan JejakTim.',
+          trailing: GeoIcon(GeoIconKind.document, size: 46),
         ),
-        const SectionTitle('Akun dan akses'),
-        const Text(
-          'Gunakan akun milik sendiri. Undangan proyek hanya boleh dibagikan kepada anggota tim yang berwenang.',
-        ),
-        const SectionTitle('Konten dan bukti kerja'),
-        const Text(
-          'Unggah hanya materi yang boleh kamu bagikan. Anggota proyek dapat melihat tugas, progres, dan bukti kerja yang kamu kirim.',
-        ),
-        const SectionTitle('Saran AI'),
-        const Text(
-          'Saran koordinasi bersifat bantuan. Keputusan tugas dan penilaian kontribusi tetap berada pada anggota tim.',
-        ),
-        const SectionTitle('Akun dan data'),
-        const Text(
-          'Kamu dapat memperbarui profil dan meminta penghapusan akun melalui halaman Privasi & data. Beberapa riwayat kerja tetap disimpan untuk menjaga konteks proyek.',
+        ...const [
+          (
+            'Akun dan akses',
+            'Gunakan akun milik sendiri. Undangan proyek hanya boleh dibagikan kepada anggota tim yang berwenang.',
+          ),
+          (
+            'Konten dan bukti kerja',
+            'Unggah hanya materi yang boleh kamu bagikan. Anggota proyek dapat melihat tugas, progres, dan bukti kerja yang kamu kirim.',
+          ),
+          (
+            'Saran AI',
+            'Saran koordinasi bersifat bantuan. Keputusan tugas dan penilaian kontribusi tetap berada pada anggota tim.',
+          ),
+          (
+            'Akun dan data',
+            'Kamu dapat memperbarui profil dan meminta penghapusan akun melalui halaman Privasi & data. Beberapa riwayat kerja tetap disimpan untuk menjaga konteks proyek.',
+          ),
+        ].map(
+          (section) => Padding(
+            padding: const EdgeInsets.only(bottom: S.md),
+            child: Surface(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(section.$1, style: T.title),
+                  const SizedBox(height: 6),
+                  Text(section.$2, style: T.body),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     ),

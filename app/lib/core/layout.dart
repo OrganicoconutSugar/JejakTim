@@ -1,4 +1,3 @@
-import 'illustrated_icon.dart';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -7,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'controller.dart';
 import 'design.dart';
+import 'geo_icons.dart';
 
 class PageFrame extends ConsumerWidget {
   final String? title;
@@ -31,34 +31,33 @@ class PageFrame extends ConsumerWidget {
           title == null
               ? null
               : AppBar(
-                title: Text(
-                  title!,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                title: Text(title!),
                 leading:
                     navIndex == null
-                        ? IconButton(
-                          tooltip: 'Kembali',
-                          iconSize: 20,
-                          icon: const AppIcon(
-                            LucideIcons.chevronLeft,
-                            size: 20,
+                        ? Padding(
+                          padding: const EdgeInsets.only(left: 10),
+                          child: Center(
+                            child: IconButton(
+                              tooltip: 'Kembali',
+                              iconSize: 20,
+                              icon: const Icon(
+                                LucideIcons.chevronLeft,
+                                size: 20,
+                                color: C.ink,
+                              ),
+                              style: IconButton.styleFrom(
+                                minimumSize: const Size(40, 40),
+                                backgroundColor: Colors.white,
+                                side: const BorderSide(color: C.line),
+                                padding: EdgeInsets.zero,
+                              ),
+                              onPressed:
+                                  () =>
+                                      context.canPop()
+                                          ? context.pop()
+                                          : context.go('/home'),
+                            ),
                           ),
-                          style: IconButton.styleFrom(
-                            minimumSize: const Size(48, 48),
-                            foregroundColor: C.ink,
-                            backgroundColor: Colors.transparent,
-                            side: BorderSide.none,
-                            padding: EdgeInsets.zero,
-                          ),
-                          onPressed:
-                              () =>
-                                  context.canPop()
-                                      ? context.pop()
-                                      : context.go('/home'),
                         )
                         : null,
                 automaticallyImplyLeading: false,
@@ -77,11 +76,8 @@ class PageFrame extends ConsumerWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             CircularProgressIndicator(),
-                            SizedBox(height: 16),
-                            Text(
-                              'Memuat data tim…',
-                              style: TextStyle(color: C.muted),
-                            ),
+                            SizedBox(height: S.lg),
+                            Text('Memuat data tim…', style: T.small),
                           ],
                         ),
                       )
@@ -106,31 +102,27 @@ class PageFrame extends ConsumerWidget {
               ? null
               : SafeArea(
                 top: false,
-                minimum: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+                minimum: const EdgeInsets.fromLTRB(20, 8, 20, 12),
                 child: Container(
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(40),
-                    boxShadow: [
-                      BoxShadow(
-                        color: C.ink.withValues(alpha: .10),
-                        blurRadius: 22,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
+                    borderRadius: BorderRadius.circular(32),
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(40),
+                    borderRadius: BorderRadius.circular(32),
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                       child: Container(
                         height: 66,
-                        padding: const EdgeInsets.all(5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: .82),
-                          borderRadius: BorderRadius.circular(40),
+                          color: Colors.white.withValues(alpha: .92),
+                          borderRadius: BorderRadius.circular(32),
                           border: Border.all(
-                            color: const Color(0xFFCFD9E8),
-                            width: 1.2,
+                            color: const Color(0xFFE1E6F2),
+                            width: 1,
                           ),
                         ),
                         child: Row(
@@ -138,37 +130,34 @@ class PageFrame extends ConsumerWidget {
                             _nav(
                               context,
                               0,
-                              LucideIcons.home,
+                              GeoIconKind.home,
                               'Beranda',
                               '/home',
                             ),
                             _nav(
                               context,
                               1,
-                              LucideIcons.checkSquare,
+                              GeoIconKind.clipboard,
                               'Tugas',
                               '/tasks',
                             ),
                             Expanded(
-                              child: Center(
-                                child: CircleAction(
-                                  LucideIcons.plus,
-                                  label: 'Tambah',
-                                  onTap: () => showAddSheet(context, c),
-                                ),
+                              child: _addNav(
+                                context,
+                                onTap: () => showAddSheet(context, c),
                               ),
                             ),
                             _nav(
                               context,
                               2,
-                              LucideIcons.sparkles,
+                              GeoIconKind.star,
                               'Insight',
                               '/insights',
                             ),
                             _nav(
                               context,
                               3,
-                              LucideIcons.userCircle,
+                              GeoIconKind.profile,
                               'Profil',
                               '/profile',
                             ),
@@ -185,11 +174,12 @@ class PageFrame extends ConsumerWidget {
   Widget _nav(
     BuildContext context,
     int i,
-    IconData icon,
+    GeoIconKind icon,
     String label,
     String path,
   ) {
     final selected = navIndex == i;
+    final dur = Duration(milliseconds: reduceMotion(context) ? 0 : 180);
     return Expanded(
       child: Semantics(
         selected: selected,
@@ -200,31 +190,40 @@ class PageFrame extends ConsumerWidget {
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              borderRadius: BorderRadius.circular(40),
+              borderRadius: BorderRadius.circular(24),
               onTap: () => context.go(path),
               child: Center(
                 child: AnimatedContainer(
-                  duration: Duration(
-                    milliseconds: reduceMotion(context) ? 0 : 220,
-                  ),
-                  curve: Curves.easeOutCubic,
-                  width: 52,
-                  height: 52,
+                  duration: dur,
+                  width: 50,
+                  height: 46,
                   decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color:
-                        selected
-                            ? C.blue.withValues(alpha: .08)
-                            : Colors.transparent,
-                    border:
-                        selected
-                            ? Border.all(color: C.blue.withValues(alpha: .30))
-                            : null,
+                    color: selected ? C.sky : Colors.transparent,
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  child: Center(
-                    child: ExcludeSemantics(
-                      child: DimensionalIcon(icon, size: 32),
-                    ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      AnimatedOpacity(
+                        duration: dur,
+                        opacity: selected ? 1 : .58,
+                        child: ExcludeSemantics(
+                          child: GeoIcon(icon, size: 26),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 3,
+                        child: AnimatedContainer(
+                          duration: dur,
+                          width: selected ? 14 : 0,
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: C.blue,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -234,6 +233,35 @@ class PageFrame extends ConsumerWidget {
       ),
     );
   }
+
+  Widget _addNav(BuildContext context, {required VoidCallback onTap}) =>
+      Semantics(
+        button: true,
+        label: 'Tambah',
+        child: Tooltip(
+          message: 'Tambah',
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(24),
+                onTap: onTap,
+                child: Container(
+                  width: 48,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: C.panel,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: const Center(
+                    child: GeoIcon(GeoIconKind.plus, size: 26),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 void showAddSheet(
@@ -245,47 +273,49 @@ void showAddSheet(
   showDragHandle: true,
   backgroundColor: Colors.white,
   shape: const RoundedRectangleBorder(
-    borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
   ),
   builder:
       (ctx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          padding: const EdgeInsets.fromLTRB(S.page, 0, S.page, S.xxl),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const Text('Langkah baru bersama tim', style: T.h1),
+              const SizedBox(height: 4),
               const Text(
-                'Langkah baru bersama tim',
-                style: TextStyle(fontSize: 23, fontWeight: FontWeight.w600),
+                'Pilih aksi cepat untuk memulai atau bergabung.',
+                style: T.small,
               ),
-              const SizedBox(height: 16),
-              if (projectId != null && c.owner(projectId))
-                ListTile(
-                  leading: const AppIcon(
-                    LucideIcons.checkSquare,
-                    color: C.blue,
-                  ),
-                  title: const Text('Buat tugas'),
-                  subtitle: const Text('Bagi tanggung jawab dengan jelas'),
+              const SizedBox(height: S.lg),
+              if (projectId != null && c.owner(projectId)) ...[
+                _SheetAction(
+                  icon: GeoIconKind.clipboard,
+                  title: 'Buat tugas',
+                  subtitle: 'Bagi tanggung jawab dengan jelas',
                   onTap: () {
                     Navigator.pop(ctx);
                     context.push('/projects/$projectId/tasks/new');
                   },
                 ),
-              ListTile(
-                leading: const AppIcon(LucideIcons.folderPlus, color: C.blue),
-                title: const Text('Buat proyek'),
-                subtitle: const Text('Mulai ruang kolaborasi baru'),
+                const SizedBox(height: S.sm),
+              ],
+              _SheetAction(
+                icon: GeoIconKind.folderPlus,
+                title: 'Buat proyek',
+                subtitle: 'Mulai ruang kolaborasi baru',
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push('/projects/new');
                 },
               ),
-              ListTile(
-                leading: const AppIcon(LucideIcons.scanLine, color: C.purple),
-                title: const Text('Gabung dengan kode'),
-                subtitle: const Text('Temukan proyek dari undangan tim'),
+              const SizedBox(height: S.sm),
+              _SheetAction(
+                icon: GeoIconKind.scan,
+                title: 'Gabung dengan kode',
+                subtitle: 'Temukan proyek dari undangan tim',
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push('/projects/join');
@@ -297,6 +327,42 @@ void showAddSheet(
       ),
 );
 
+class _SheetAction extends StatelessWidget {
+  final GeoIconKind icon;
+  final String title, subtitle;
+  final VoidCallback onTap;
+  const _SheetAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) => Surface(
+    color: C.panel,
+    padding: const EdgeInsets.all(14),
+    radius: 16,
+    onTap: onTap,
+    child: Row(
+      children: [
+        GeoIcon(icon, size: 32),
+        const SizedBox(width: S.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: T.bodyStrong),
+              const SizedBox(height: 2),
+              Text(subtitle, style: T.caption),
+            ],
+          ),
+        ),
+        const Icon(LucideIcons.chevronRight, size: 18, color: C.muted),
+      ],
+    ),
+  );
+}
+
 class ContentList extends StatelessWidget {
   final List<Widget> children;
   final Future<void> Function()? onRefresh;
@@ -305,10 +371,10 @@ class ContentList extends StatelessWidget {
   Widget build(BuildContext context) {
     final view = ListView(
       padding: EdgeInsets.fromLTRB(
-        24,
-        16,
-        24,
-        28 + MediaQuery.paddingOf(context).bottom,
+        S.page,
+        S.md,
+        S.page,
+        S.xxl + MediaQuery.paddingOf(context).bottom,
       ),
       physics: const AlwaysScrollableScrollPhysics(),
       children: children,

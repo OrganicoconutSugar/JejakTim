@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'design.dart';
 
-/// JejakTim's playful 3D icon set.
+/// JejakTim's icon helper.
 ///
-/// Primary navigation and feature symbols use transparent raster assets inspired
-/// by the soft toy-like reference. Small utility controls keep Lucide glyphs so
-/// arrows, close buttons, and form affordances stay crisp at compact sizes.
+/// Primary navigation and key feature symbols use the playful 3D raster assets
+/// when no explicit tint color is requested. Utility icons and tinted badges
+/// render crisp Lucide vector glyphs so every symbol matches its exact meaning.
 class AppIcon extends StatelessWidget {
   final IconData icon;
   final double? size;
@@ -14,8 +15,8 @@ class AppIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final asset = _assetFor(icon);
-    if (asset == null || color == Colors.white) {
+    final asset = color == null ? _assetFor(icon) : null;
+    if (asset == null) {
       return Icon(icon, size: size, color: color ?? _fallbackTone(icon));
     }
     final dimension = size ?? 24;
@@ -34,51 +35,24 @@ String? _assetFor(IconData icon) {
   if (icon == LucideIcons.home) {
     return 'assets/icons3d/home.png';
   }
-  if ([
-    LucideIcons.folderOpen,
-    LucideIcons.folderPlus,
-    LucideIcons.layers,
-    LucideIcons.sprout,
-    LucideIcons.archive,
-  ].contains(icon)) {
+  if (icon == LucideIcons.folderOpen || icon == LucideIcons.folderPlus) {
     return 'assets/icons3d/projects.png';
   }
-  if ([
-    LucideIcons.checkSquare,
-    LucideIcons.clipboardCheck,
-    LucideIcons.clipboardList,
-    LucideIcons.check,
-    LucideIcons.checkCheck,
-    LucideIcons.checkCircle2,
-    LucideIcons.calendarDays,
-    LucideIcons.circleDot,
-  ].contains(icon)) {
+  if (icon == LucideIcons.checkSquare ||
+      icon == LucideIcons.clipboardCheck ||
+      icon == LucideIcons.clipboardList) {
     return 'assets/icons3d/tasks.png';
   }
-  if ([
-    LucideIcons.sparkles,
-    LucideIcons.heartHandshake,
-    LucideIcons.messageCircle,
-    LucideIcons.messageSquare,
-    LucideIcons.messagesSquare,
-  ].contains(icon)) {
+  if (icon == LucideIcons.sparkles) {
     return 'assets/icons3d/insights.png';
   }
-  if ([
-    LucideIcons.user,
-    LucideIcons.userCircle,
-    LucideIcons.userCheck,
-    LucideIcons.userPlus,
-    LucideIcons.userMinus,
-    LucideIcons.users,
-    LucideIcons.crown,
-  ].contains(icon)) {
+  if (icon == LucideIcons.userCircle) {
     return 'assets/icons3d/profile.png';
   }
-  if ([LucideIcons.bell, LucideIcons.bellOff].contains(icon)) {
+  if (icon == LucideIcons.bell) {
     return 'assets/icons3d/notifications.png';
   }
-  if ([LucideIcons.shieldCheck, LucideIcons.shieldAlert].contains(icon)) {
+  if (icon == LucideIcons.shieldCheck) {
     return 'assets/icons3d/privacy.png';
   }
   if (icon == LucideIcons.fileText) {
@@ -87,15 +61,12 @@ String? _assetFor(IconData icon) {
   if (icon == LucideIcons.pencil) {
     return 'assets/icons3d/edit.png';
   }
-  if ([
-    LucideIcons.camera,
-    LucideIcons.image,
-    LucideIcons.imagePlus,
-    LucideIcons.upload,
-  ].contains(icon)) {
+  if (icon == LucideIcons.camera ||
+      icon == LucideIcons.image ||
+      icon == LucideIcons.imagePlus) {
     return 'assets/icons3d/photo.png';
   }
-  if ([LucideIcons.search, LucideIcons.scanLine].contains(icon)) {
+  if (icon == LucideIcons.search) {
     return 'assets/icons3d/search.png';
   }
   if (icon == LucideIcons.plus) {
@@ -113,7 +84,7 @@ Color _fallbackTone(IconData icon) {
     LucideIcons.arrowUpRight,
     LucideIcons.x,
   ].contains(icon)) {
-    return const Color(0xFF292F3C);
+    return C.ink2;
   }
-  return const Color(0xFF286DA0);
+  return C.blue;
 }

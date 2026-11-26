@@ -1,13 +1,13 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide OAuthProvider;
+import 'package:firebase_auth/firebase_auth.dart' hide OAuthProvider, User;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/repository.dart';
-import '../data/demo_repository.dart';
 import '../data/firebase_repository.dart';
 import '../data/supabase_repository.dart';
 import 'evidence_photo.dart';
@@ -22,7 +22,9 @@ class AppController extends ChangeNotifier {
   final bool firebaseReady;
   final bool supabaseReady;
   RealtimeChannel? _workspaceChannel;
-  late TeamRepository repository;
+  StreamSubscription<AuthState>? _authSub;
+  Future<void>? _attachingSupabase;
+  TeamRepository? repository;
   String? uid;
   Json data = {};
   bool loading = false;
@@ -34,15 +36,31 @@ class AppController extends ChangeNotifier {
     this.firebaseReady = false,
     this.supabaseReady = false,
     this.bootstrapError,
+    this.repository,
   }) {
-    repository = DemoRepository(prefs);
+    if (supabaseReady) {
+      _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((
+        event,
+      ) {
+        final sessionUser = event.session?.user;
+        if (event.event == AuthChangeEvent.signedOut) {
+          if (uid != null) {
+            unawaited(_clearLocalState());
+          }
+          return;
+        }
+        if (sessionUser != null && uid != sessionUser.id) {
+          unawaited(_attachSupabaseUser(sessionUser));
+        }
+      });
+    }
   }
   bool get authenticated => uid != null;
-  bool get demo => repository.isDemo;
   bool get onboarded => prefs.getBool('onboarded') ?? false;
   Json get profile => Map<String, dynamic>.from(data['profile'] as Map? ?? {});
   List<Json> get projects => rowsOf(data, 'projects');
-  List<Json> get tasks => rowsOf(data, 'tasks');
+  List<Json> get tasks =>
+      rowsOf(data, 'tasks').where((task) => task['deletedAt'] == null).toList();
   List<Json> get activity => rowsOf(data, 'activity')
     ..sort((a, b) => textOf(b, 'createdAt').compareTo(textOf(a, 'createdAt')));
   List<Json> get people => rowsOf(data, 'profiles');
@@ -51,27 +69,69 @@ class AppController extends ChangeNotifier {
     'name',
     'Anggota',
   );
+  String avatarOf(String? id) {
+    if (id == null) return '';
+    if (id == uid) {
+      final own = textOf(profile, 'avatarDataUrl');
+      if (own.isNotEmpty) return own;
+    }
+    return textOf(
+      people.where((p) => p['uid'] == id).firstOrNull ?? {},
+      'avatarDataUrl',
+    );
+  }
   Json? project(String id) => projects.where((p) => p['id'] == id).firstOrNull;
   Json? task(String id) => tasks.where((t) => t['id'] == id).firstOrNull;
   List<Json> projectTasks(String id) =>
       tasks.where((t) => t['projectId'] == id).toList();
   bool owner(String id) => project(id)?['ownerId'] == uid;
+  bool notificationCategoryEnabled(String category) =>
+      prefs.getBool('notifications.$uid.$category') ?? true;
+
+  Future<void> setNotificationCategory(String category, bool enabled) async {
+    await prefs.setBool('notifications.$uid.$category', enabled);
+    notifyListeners();
+  }
+
   Future<void> finishOnboarding() async {
     await prefs.setBool('onboarded', true);
     notifyListeners();
   }
 
-  Future<void> restore() async {
-    if (supabaseReady && Supabase.instance.client.auth.currentUser != null) {
-      repository = SupabaseTeamRepository(Supabase.instance.client);
-      uid = Supabase.instance.client.auth.currentUser!.id;
-      await repository.command(uid!, 'syncProfile', {
-        'name':
-            Supabase.instance.client.auth.currentUser!.userMetadata?['name'] ??
-            'Mahasiswa',
+  Future<void> _attachSupabaseUser(
+    User user, {
+    String? explicitName,
+  }) async {
+    if (_attachingSupabase != null) return _attachingSupabase;
+    final task = () async {
+      final repo = SupabaseTeamRepository(Supabase.instance.client);
+      final candidate =
+          explicitName?.trim() ??
+          user.userMetadata?['name']?.toString().trim() ??
+          user.userMetadata?['full_name']?.toString().trim() ??
+          '';
+      await repo.command(user.id, 'syncProfile', {
+        'name': candidate.length >= 3 ? candidate : 'Mahasiswa',
       });
+      repository = repo;
+      uid = user.id;
+      await _stopWatching();
       await refresh();
       _watchWorkspace();
+    }();
+    _attachingSupabase = task;
+    try {
+      await task;
+    } finally {
+      if (identical(_attachingSupabase, task)) {
+        _attachingSupabase = null;
+      }
+    }
+  }
+
+  Future<void> restore() async {
+    if (supabaseReady && Supabase.instance.client.auth.currentUser != null) {
+      await _attachSupabaseUser(Supabase.instance.client.auth.currentUser!);
       return;
     }
     if (firebaseReady && FirebaseAuth.instance.currentUser != null) {
@@ -81,20 +141,22 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> enterDemo([String person = 'nara']) async {
+  @visibleForTesting
+  Future<void> setSessionForTest(TeamRepository repo, String testUid) async {
     await _stopWatching();
-    repository = DemoRepository(prefs);
-    uid = person;
+    repository = repo;
+    uid = testUid;
     await refresh();
   }
 
   Future<void> refresh() async {
-    if (uid == null) return;
+    final repo = repository;
+    if (uid == null || repo == null) return;
     loading = true;
     error = null;
     notifyListeners();
     try {
-      data = await repository.load(uid!);
+      data = await repo.load(uid!);
     } catch (e) {
       data = {};
       error = errorMessage(e);
@@ -122,14 +184,7 @@ class AppController extends ChangeNotifier {
       }
       final user = auth.currentUser;
       require(user != null, 'Akun belum dapat diverifikasi. Coba lagi.');
-      final repo = SupabaseTeamRepository(Supabase.instance.client);
-      await repo.command(user!.id, 'syncProfile', {
-        'name': name?.trim() ?? user.userMetadata?['name'] ?? 'Mahasiswa',
-      });
-      repository = repo;
-      uid = user.id;
-      await refresh();
-      _watchWorkspace();
+      await _attachSupabaseUser(user!, explicitName: name);
       return;
     }
     require(
@@ -241,12 +296,13 @@ class AppController extends ChangeNotifier {
   }
 
   Future<Json> act(String action, Json payload) async {
-    require(uid != null, 'Masuk terlebih dahulu.');
+    final repo = repository;
+    require(uid != null && repo != null, 'Masuk terlebih dahulu.');
     require(!busy, 'Tunggu proses sebelumnya selesai.');
     busy = true;
     notifyListeners();
     try {
-      final result = await repository.command(uid!, action, {
+      final result = await repo!.command(uid!, action, {
         ...payload,
         'requestId': const Uuid().v4(),
       });
@@ -264,11 +320,12 @@ class AppController extends ChangeNotifier {
     required Uint8List bytes,
     required EvidencePhotoType type,
   }) async {
+    final repo = repository;
     require(
-      repository is SupabaseTeamRepository,
+      repo is SupabaseTeamRepository,
       'Unggah foto memerlukan akun Supabase.',
     );
-    return (repository as SupabaseTeamRepository).uploadEvidencePhoto(
+    return (repo as SupabaseTeamRepository).uploadEvidencePhoto(
       projectId: projectId,
       taskId: taskId,
       bytes: bytes,
@@ -277,16 +334,30 @@ class AppController extends ChangeNotifier {
   }
 
   Future<Uint8List> downloadEvidencePhoto(String path) async {
-    require(repository is SupabaseTeamRepository, 'Foto tidak tersedia.');
-    return (repository as SupabaseTeamRepository).downloadEvidencePhoto(path);
+    final repo = repository;
+    require(repo is SupabaseTeamRepository, 'Foto tidak tersedia.');
+    return (repo as SupabaseTeamRepository).downloadEvidencePhoto(path);
+  }
+
+  Future<void> _clearLocalState() async {
+    await _stopWatching();
+    repository = null;
+    uid = null;
+    data = {};
+    error = null;
+    notifyListeners();
   }
 
   Future<void> logout() async {
+    final repo = repository;
     await _stopWatching();
-    await repository.clearSession();
-    if (firebaseReady && !demo && repository is FirebaseTeamRepository) {
+    if (repo != null) {
+      await repo.clearSession();
+    }
+    if (firebaseReady && repo is FirebaseTeamRepository) {
       await FirebaseAuth.instance.signOut();
     }
+    repository = null;
     uid = null;
     data = {};
     error = null;
@@ -294,8 +365,9 @@ class AppController extends ChangeNotifier {
   }
 
   void _watchWorkspace() {
-    if (repository is! SupabaseTeamRepository || uid == null) return;
-    _workspaceChannel = (repository as SupabaseTeamRepository).watch(uid!, () {
+    final repo = repository;
+    if (repo is! SupabaseTeamRepository || uid == null) return;
+    _workspaceChannel = repo.watch(uid!, () {
       if (!loading && !busy) refresh();
     });
   }
@@ -308,11 +380,11 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> resetDemo() async {
-    if (repository is DemoRepository) {
-      await (repository as DemoRepository).reset();
-      await refresh();
-    }
+  @override
+  void dispose() {
+    unawaited(_authSub?.cancel());
+    unawaited(_stopWatching());
+    super.dispose();
   }
 }
 

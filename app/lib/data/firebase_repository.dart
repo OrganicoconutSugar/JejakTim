@@ -5,8 +5,6 @@ import 'repository.dart';
 class FirebaseTeamRepository implements TeamRepository {
   final FirebaseFunctions functions;
   FirebaseTeamRepository(this.functions);
-  @override
-  bool get isDemo => false;
   Json normalize(dynamic value) => Map<String, dynamic>.from(
     value as Map,
   ).map((k, v) => MapEntry(k, convert(v)));

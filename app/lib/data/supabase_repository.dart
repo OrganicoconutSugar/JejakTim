@@ -14,14 +14,18 @@ class SupabaseTeamRepository implements TeamRepository {
   SupabaseTeamRepository(this.client);
 
   @override
-  bool get isDemo => false;
-
-  @override
   Future<Json> load(String uid) async =>
       Map<String, dynamic>.from(await client.rpc('jt_workspace') as Map);
 
   @override
   Future<Json> command(String uid, String action, Json payload) async {
+    if (action == 'removeTask' || action == 'projectChat') {
+      final result = await client.rpc(
+        action == 'removeTask' ? 'jt_remove_task' : 'jt_project_chat',
+        params: {'input_data': payload},
+      );
+      return Map<String, dynamic>.from(result as Map);
+    }
     final result =
         action == 'submitTask'
             ? await client.rpc(
@@ -54,6 +58,28 @@ class SupabaseTeamRepository implements TeamRepository {
 
   Future<Uint8List> downloadEvidencePhoto(String path) =>
       client.storage.from('jt-evidence').download(path);
+
+  Future<void> uploadChatImage(
+    String path,
+    Uint8List bytes,
+    EvidencePhotoType type,
+  ) async {
+    try {
+      await client.storage
+          .from('jt-chat-images')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(contentType: type.mimeType),
+          );
+    } on StorageException catch (e) {
+      // The path belongs to this message. An earlier attempt may have uploaded it.
+      if (e.statusCode != '409' && e.error != 'Duplicate') rethrow;
+    }
+  }
+
+  Future<Uint8List> downloadChatImage(String path) =>
+      client.storage.from('jt-chat-images').download(path);
 
   @override
   Future<void> clearSession() => client.auth.signOut();
