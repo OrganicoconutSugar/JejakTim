@@ -166,14 +166,34 @@ class _HomeState extends ConsumerState<HomeScreen> {
                               ),
                             ),
                             IconButton(
-                              tooltip: 'Notifikasi',
+                              tooltip:
+                                  c.notificationCount > 0
+                                      ? 'Notifikasi (${c.notificationCount})'
+                                      : 'Notifikasi',
                               onPressed: () => context.push('/notifications'),
                               style: IconButton.styleFrom(
                                 minimumSize: const Size(44, 44),
                                 backgroundColor: Colors.white,
                                 side: const BorderSide(color: C.line),
                               ),
-                              icon: const GeoIcon(GeoIconKind.bell, size: 22),
+                              icon: Badge(
+                                isLabelVisible: c.notificationCount > 0,
+                                backgroundColor: C.blue,
+                                textColor: Colors.white,
+                                label: Text(
+                                  c.notificationCount > 9
+                                      ? '9+'
+                                      : '${c.notificationCount}',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                child: const GeoIcon(
+                                  GeoIconKind.bell,
+                                  size: 22,
+                                ),
+                              ),
                             ),
                             const SizedBox(width: S.sm),
                             InkWell(
@@ -2026,24 +2046,121 @@ class _ProjectDetailState extends ConsumerState<ProjectDetailScreen> {
                           ),
                         ),
                         if (isOwner && e.value != c.uid)
-                          IconButton(
-                            tooltip: 'Keluarkan anggota',
+                          PopupMenuButton<String>(
+                            tooltip: 'Opsi anggota',
                             icon: const Icon(
-                              LucideIcons.userMinus,
+                              LucideIcons.moreVertical,
                               size: 18,
                               color: C.muted,
                             ),
-                            onPressed: () async {
+                            onSelected: (choice) async {
+                              if (choice == 'transfer') {
+                                if (await confirm(
+                                  context,
+                                  'Jadikan ketua proyek?',
+                                  'Peran ketua proyek akan dialihkan ke ${c.name(e.value)}. Kamu tetap menjadi anggota proyek.',
+                                  label: 'Alihkan peran',
+                                )) {
+                                  try {
+                                    await c.act('transferOwnership', {
+                                      'projectId': widget.id,
+                                      'newOwnerId': e.value,
+                                    });
+                                    if (context.mounted) {
+                                      toast(
+                                        context,
+                                        'Peran ketua dialihkan ke ${c.name(e.value)}.',
+                                      );
+                                    }
+                                  } catch (ex) {
+                                    if (mounted) {
+                                      setState(() => error = errorMessage(ex));
+                                    }
+                                  }
+                                }
+                              } else if (choice == 'remove') {
+                                if (await confirm(
+                                  context,
+                                  'Keluarkan anggota?',
+                                  'Akses proyek akan dicabut. Tugas aktif harus dialihkan terlebih dahulu.',
+                                )) {
+                                  try {
+                                    await c.act('removeMember', {
+                                      'projectId': widget.id,
+                                      'memberId': e.value,
+                                    });
+                                  } catch (ex) {
+                                    if (mounted) {
+                                      setState(() => error = errorMessage(ex));
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            itemBuilder:
+                                (_) => [
+                                  const PopupMenuItem(
+                                    value: 'transfer',
+                                    child: Row(
+                                      children: [
+                                        Icon(LucideIcons.crown, size: 16),
+                                        SizedBox(width: 10),
+                                        Text('Jadikan ketua'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'remove',
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          LucideIcons.userMinus,
+                                          size: 16,
+                                          color: Color(0xFFC24636),
+                                        ),
+                                        SizedBox(width: 10),
+                                        Text(
+                                          'Keluarkan anggota',
+                                          style: TextStyle(
+                                            color: Color(0xFFC24636),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (!isOwner && members.contains(c.uid)) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        c.busy
+                            ? null
+                            : () async {
                               if (await confirm(
                                 context,
-                                'Keluarkan anggota?',
-                                'Akses proyek akan dicabut. Tugas aktif harus dialihkan terlebih dahulu.',
+                                'Keluar dari proyek?',
+                                'Aksesmu ke proyek ini akan dicabut. Pastikan tidak ada tugas aktif yang masih menjadi tanggung jawabmu.',
+                                label: 'Keluar proyek',
                               )) {
                                 try {
-                                  await c.act('removeMember', {
+                                  await c.act('leaveProject', {
                                     'projectId': widget.id,
-                                    'memberId': e.value,
                                   });
+                                  if (context.mounted) {
+                                    context.go('/home');
+                                    toast(
+                                      context,
+                                      'Kamu sudah keluar dari proyek.',
+                                    );
+                                  }
                                 } catch (ex) {
                                   if (mounted) {
                                     setState(() => error = errorMessage(ex));
@@ -2051,12 +2168,11 @@ class _ProjectDetailState extends ConsumerState<ProjectDetailScreen> {
                                 }
                               }
                             },
-                          ),
-                      ],
-                    ),
+                    icon: const Icon(LucideIcons.logOut, size: 18),
+                    label: const Text('Keluar dari proyek'),
                   ),
                 ),
-              ),
+              ],
             ],
             'Aktivitas' => [
               if (c.activity.where((a) => a['projectId'] == widget.id).isEmpty)

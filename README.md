@@ -39,7 +39,7 @@ Nama **JejakTim** dipilih karena setiap langkah kerja tim tetap tercatat dan mud
 
 ## Menjalankan di komputer
 
-1. Jalankan seluruh skema SQL di folder [`supabase/`](supabase/) secara berurutan (`001` hingga `007`) melalui Supabase SQL Editor.
+1. Jalankan seluruh skema SQL di folder [`supabase/`](supabase/) secara berurutan (`001` hingga `008`) melalui Supabase SQL Editor.
 2. Siapkan konfigurasi Supabase di `app/supabase.config.json` (lihat contoh di [`app/supabase.config.example.json`](app/supabase.config.example.json)).
 3. Jalankan aplikasi:
 

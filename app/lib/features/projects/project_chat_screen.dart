@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
@@ -28,6 +29,8 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   List<Json> _messages = [];
   String? _error;
   Timer? _refreshTimer;
+  RealtimeChannel? _chatChannel;
+  SupabaseTeamRepository? _subscribedRepo;
   bool _loading = false, _syncing = false, _sending = false, _loaded = false;
   bool _hasOlder = false;
   bool _attachmentsEnabled = false;
@@ -44,10 +47,18 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_load());
+      if (!mounted) return;
+      unawaited(_load());
+      final repo = ref.read(controllerProvider).repository;
+      if (repo is SupabaseTeamRepository) {
+        _subscribedRepo = repo;
+        _chatChannel = repo.watchProjectChat(widget.projectId, () {
+          if (mounted && !_sending) unawaited(_load(silent: true));
+        });
+      }
     });
-    _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (ModalRoute.of(context)?.isCurrent == true) {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
         unawaited(_load(silent: true));
       }
     });
@@ -56,6 +67,13 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    final channel = _chatChannel;
+    final repo = _subscribedRepo;
+    _chatChannel = null;
+    _subscribedRepo = null;
+    if (channel != null && repo != null) {
+      unawaited(repo.removeChannel(channel));
+    }
     _draft.dispose();
     super.dispose();
   }

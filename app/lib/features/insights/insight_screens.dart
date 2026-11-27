@@ -654,33 +654,8 @@ class NotificationsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = ref.watch(controllerProvider);
-    final disabled =
-        (c.profile['notificationPrefs'] as Map?)?['inApp'] == false;
-    final showReview = c.notificationCategoryEnabled('review');
-    final showRevision = c.notificationCategoryEnabled('revision');
-    final showDeadline = c.notificationCategoryEnabled('deadline');
-    final now = today();
-    final cutoff = DateTime(now.year, now.month, now.day + 4);
-    final tasks =
-        c.tasks.where((t) {
-          if (c.project(textOf(t, 'projectId'))?['status'] != 'active') {
-            return false;
-          }
-          final status = t['status'];
-          if (showReview && t['reviewerId'] == c.uid && status == 'submitted') {
-            return true;
-          }
-          if (!stringsOf(t, 'assigneeIds').contains(c.uid)) return false;
-          if (showRevision && status == 'revision_requested') return true;
-          if (!showDeadline ||
-              !['todo', 'in_progress', 'revision_requested'].contains(status)) {
-            return false;
-          }
-          final deadline = dateOf(t, 'dueAt');
-          return deadline != null &&
-              !deadline.isBefore(now) &&
-              deadline.isBefore(cutoff);
-        }).toList();
+    final disabled = c.notificationsDisabled;
+    final tasks = c.notificationTasks;
     return PageFrame(
       title: 'Notifikasi',
       child: ContentList(

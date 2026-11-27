@@ -19,19 +19,17 @@ class SupabaseTeamRepository implements TeamRepository {
 
   @override
   Future<Json> command(String uid, String action, Json payload) async {
-    if (action == 'removeTask' || action == 'projectChat') {
-      final result = await client.rpc(
-        action == 'removeTask' ? 'jt_remove_task' : 'jt_project_chat',
-        params: {'input_data': payload},
-      );
-      return Map<String, dynamic>.from(result as Map);
-    }
+    const dedicatedRpcs = {
+      'removeTask': 'jt_remove_task',
+      'projectChat': 'jt_project_chat',
+      'submitTask': 'jt_submit_evidence',
+      'leaveProject': 'jt_leave_project',
+      'transferOwnership': 'jt_transfer_ownership',
+    };
+    final rpcName = dedicatedRpcs[action];
     final result =
-        action == 'submitTask'
-            ? await client.rpc(
-              'jt_submit_evidence',
-              params: {'input_data': payload},
-            )
+        rpcName != null
+            ? await client.rpc(rpcName, params: {'input_data': payload})
             : await client.rpc(
               'jt_command',
               params: {'action_name': action, 'input_data': payload},
@@ -94,4 +92,23 @@ class SupabaseTeamRepository implements TeamRepository {
             callback: (_) => onChange(),
           )
           .subscribe();
+
+  RealtimeChannel watchProjectChat(String projectId, void Function() onChange) =>
+      client
+          .channel('jejaktim-chat-$projectId-${const Uuid().v4()}')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'jt_project_messages',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'project_id',
+              value: projectId,
+            ),
+            callback: (_) => onChange(),
+          )
+          .subscribe();
+
+  Future<void> removeChannel(RealtimeChannel channel) =>
+      client.removeChannel(channel);
 }

@@ -6,6 +6,8 @@ functions/lib/
 .env
 .env.*
 !.env.example
+supabase.config.json
+app/supabase.config.json
 *.jks
 *.keystore
 *service-account*.json

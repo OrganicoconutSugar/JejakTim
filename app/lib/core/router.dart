@@ -40,12 +40,23 @@ GoRouter makeRouter(AppController controller) {
     initialLocation: '/splash',
     refreshListenable: controller,
     redirect: (context, state) {
+      if (state.uri.scheme == 'jejaktim' && state.uri.host == 'join') {
+        final code = state.uri.pathSegments.firstOrNull?.trim().toUpperCase();
+        if (code != null && RegExp(r'^[A-Za-z0-9-]{4,64}$').hasMatch(code)) {
+          final target = '/projects/invite/$code/preview';
+          if (!controller.authenticated) {
+            pendingInvite = target;
+            return '/auth/login';
+          }
+          return target;
+        }
+      }
       final path = state.uri.path;
       if (path == '/splash' || path == '/onboarding') return null;
       final auth = path.startsWith('/auth');
       if (!controller.authenticated && !auth) {
         if (RegExp(
-          r'^/projects/invite/[A-Za-z0-9-]{6,64}/preview$',
+          r'^/projects/invite/[A-Za-z0-9-]{4,64}/preview$',
         ).hasMatch(path)) {
           pendingInvite = path;
         }

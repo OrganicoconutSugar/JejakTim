@@ -45,6 +45,8 @@ const activityActionLabels = {
   'submitTask': 'Mengirim bukti kerja',
   'reviewSubmission': 'Meninjau hasil kerja',
   'removeTask': 'Menghapus tugas',
+  'leaveProject': 'Keluar dari proyek',
+  'transferOwnership': 'Mengalihkan peran ketua proyek',
   'generateProjectReport': 'Membuat snapshot laporan',
 };
 

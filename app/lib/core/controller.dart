@@ -1,14 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide OAuthProvider, User;
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/repository.dart';
-import '../data/firebase_repository.dart';
 import '../data/supabase_repository.dart';
 import 'evidence_photo.dart';
 import 'models.dart';
@@ -19,7 +15,6 @@ final controllerProvider = ChangeNotifierProvider<AppController>(
 
 class AppController extends ChangeNotifier {
   final SharedPreferences prefs;
-  final bool firebaseReady;
   final bool supabaseReady;
   RealtimeChannel? _workspaceChannel;
   StreamSubscription<AuthState>? _authSub;
@@ -33,7 +28,6 @@ class AppController extends ChangeNotifier {
   String? bootstrapError;
   AppController(
     this.prefs, {
-    this.firebaseReady = false,
     this.supabaseReady = false,
     this.bootstrapError,
     this.repository,
@@ -88,6 +82,39 @@ class AppController extends ChangeNotifier {
   bool notificationCategoryEnabled(String category) =>
       prefs.getBool('notifications.$uid.$category') ?? true;
 
+  bool get notificationsDisabled =>
+      (profile['notificationPrefs'] as Map?)?['inApp'] == false;
+
+  List<Json> get notificationTasks {
+    if (notificationsDisabled || uid == null) return const [];
+    final showReview = notificationCategoryEnabled('review');
+    final showRevision = notificationCategoryEnabled('revision');
+    final showDeadline = notificationCategoryEnabled('deadline');
+    final now = today();
+    final cutoff = DateTime(now.year, now.month, now.day + 4);
+    return tasks.where((t) {
+      if (project(textOf(t, 'projectId'))?['status'] != 'active') {
+        return false;
+      }
+      final status = t['status'];
+      if (showReview && t['reviewerId'] == uid && status == 'submitted') {
+        return true;
+      }
+      if (!stringsOf(t, 'assigneeIds').contains(uid)) return false;
+      if (showRevision && status == 'revision_requested') return true;
+      if (!showDeadline ||
+          !['todo', 'in_progress', 'revision_requested'].contains(status)) {
+        return false;
+      }
+      final deadline = dateOf(t, 'dueAt');
+      return deadline != null &&
+          !deadline.isBefore(now) &&
+          deadline.isBefore(cutoff);
+    }).toList();
+  }
+
+  int get notificationCount => notificationTasks.length;
+
   Future<void> setNotificationCategory(String category, bool enabled) async {
     await prefs.setBool('notifications.$uid.$category', enabled);
     notifyListeners();
@@ -132,12 +159,6 @@ class AppController extends ChangeNotifier {
   Future<void> restore() async {
     if (supabaseReady && Supabase.instance.client.auth.currentUser != null) {
       await _attachSupabaseUser(Supabase.instance.client.auth.currentUser!);
-      return;
-    }
-    if (firebaseReady && FirebaseAuth.instance.currentUser != null) {
-      repository = FirebaseTeamRepository(FirebaseFunctions.instance);
-      uid = FirebaseAuth.instance.currentUser!.uid;
-      await refresh();
     }
   }
 
@@ -167,132 +188,47 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> signIn(String email, String password, {String? name}) async {
-    if (supabaseReady) {
-      final auth = Supabase.instance.client.auth;
-      if (name != null) {
-        final response = await auth.signUp(
-          email: email.trim(),
-          password: password,
-          data: {'name': name.trim()},
-        );
-        require(
-          response.session != null,
-          'Akun dibuat. Periksa email verifikasi, lalu masuk kembali.',
-        );
-      } else {
-        await auth.signInWithPassword(email: email.trim(), password: password);
-      }
-      final user = auth.currentUser;
-      require(user != null, 'Akun belum dapat diverifikasi. Coba lagi.');
-      await _attachSupabaseUser(user!, explicitName: name);
-      return;
-    }
     require(
-      firebaseReady,
+      supabaseReady,
       'Layanan autentikasi belum siap. Periksa konfigurasi dan coba lagi.',
     );
-    final auth = FirebaseAuth.instance;
-    UserCredential result;
+    final auth = Supabase.instance.client.auth;
     if (name != null) {
-      result = await auth.createUserWithEmailAndPassword(
+      final response = await auth.signUp(
         email: email.trim(),
         password: password,
+        data: {'name': name.trim()},
       );
-      await result.user!.updateDisplayName(name.trim());
+      require(
+        response.session != null,
+        'Akun dibuat. Periksa email verifikasi, lalu masuk kembali.',
+      );
     } else {
-      result = await auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
+      await auth.signInWithPassword(email: email.trim(), password: password);
     }
-    await _completeFirebaseSignIn(result);
+    final user = auth.currentUser;
+    require(user != null, 'Akun belum dapat diverifikasi. Coba lagi.');
+    await _attachSupabaseUser(user!, explicitName: name);
   }
-
-  bool _googleInitialized = false;
 
   Future<void> signInWithGoogle() async {
-    if (supabaseReady) {
-      final started = await Supabase.instance.client.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: kIsWeb ? Uri.base.origin : null,
-      );
-      require(started, 'Google belum dapat dibuka. Coba lagi.');
-      return;
-    }
     require(
-      firebaseReady,
-      'Masuk dengan Google belum tersedia. Firebase perlu dikonfigurasi terlebih dahulu.',
+      supabaseReady,
+      'Masuk dengan Google belum tersedia. Supabase perlu dikonfigurasi terlebih dahulu.',
     );
-    final auth = FirebaseAuth.instance;
-    UserCredential result;
-    if (kIsWeb) {
-      result = await auth.signInWithPopup(GoogleAuthProvider());
-    } else if (defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS) {
-      if (!_googleInitialized) {
-        const serverClientId = String.fromEnvironment(
-          'GOOGLE_SERVER_CLIENT_ID',
-        );
-        await GoogleSignIn.instance.initialize(
-          serverClientId: serverClientId.isEmpty ? null : serverClientId,
-        );
-        _googleInitialized = true;
-      }
-      final account = await GoogleSignIn.instance.authenticate();
-      final idToken = account.authentication.idToken;
-      require(
-        idToken != null && idToken.isNotEmpty,
-        'Google belum dapat memverifikasi akun. Periksa konfigurasi lalu coba lagi.',
-      );
-      result = await auth.signInWithCredential(
-        GoogleAuthProvider.credential(idToken: idToken),
-      );
-    } else {
-      throw const AppFailure(
-        'Masuk dengan Google tersedia di Android dan browser web.',
-      );
-    }
-    await _completeFirebaseSignIn(result);
-  }
-
-  Future<void> _completeFirebaseSignIn(UserCredential result) async {
-    final user = result.user;
-    require(user != null, 'Akun belum dapat diverifikasi. Coba lagi.');
-    final firebaseRepository = FirebaseTeamRepository(
-      FirebaseFunctions.instance,
+    final started = await Supabase.instance.client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: kIsWeb ? Uri.base.origin : 'jejaktim://login-callback',
     );
-    final candidateName = (user!.displayName ?? '').trim();
-    final profileName = candidateName.length >= 3 ? candidateName : 'Mahasiswa';
-    try {
-      await firebaseRepository.command(user.uid, 'syncProfile', {
-        'name':
-            profileName.length > 80
-                ? profileName.substring(0, 80)
-                : profileName,
-      });
-    } catch (_) {
-      await FirebaseAuth.instance.signOut();
-      rethrow;
-    }
-    repository = firebaseRepository;
-    uid = user.uid;
-    await refresh();
+    require(started, 'Google belum dapat dibuka. Coba lagi.');
   }
 
   Future<void> resetPassword(String email) async {
-    if (supabaseReady) {
-      await Supabase.instance.client.auth.resetPasswordForEmail(email.trim());
-      return;
-    }
     require(
-      firebaseReady,
-      'Firebase lokal belum diaktifkan. Reset email tersedia setelah emulator Auth dijalankan.',
+      supabaseReady,
+      'Layanan reset kata sandi belum siap. Periksa konfigurasi Supabase.',
     );
-    try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email.trim());
-    } on FirebaseAuthException catch (e) {
-      if (!['user-not-found', 'invalid-email'].contains(e.code)) rethrow;
-    }
+    await Supabase.instance.client.auth.resetPasswordForEmail(email.trim());
   }
 
   Future<Json> act(String action, Json payload) async {
@@ -354,9 +290,6 @@ class AppController extends ChangeNotifier {
     if (repo != null) {
       await repo.clearSession();
     }
-    if (firebaseReady && repo is FirebaseTeamRepository) {
-      await FirebaseAuth.instance.signOut();
-    }
     repository = null;
     uid = null;
     data = {};
@@ -407,42 +340,5 @@ String errorMessage(Object e) {
     return 'Autentikasi belum berhasil. Periksa isian dan coba lagi.';
   }
   if (e is PostgrestException) return e.message;
-  if (e is GoogleSignInException) {
-    return switch (e.code) {
-      GoogleSignInExceptionCode.canceled ||
-      GoogleSignInExceptionCode
-          .interrupted => 'Login Google dibatalkan. Silakan coba lagi.',
-      GoogleSignInExceptionCode.clientConfigurationError ||
-      GoogleSignInExceptionCode.providerConfigurationError =>
-        'Masuk dengan Google belum dikonfigurasi. Hubungi pengelola aplikasi.',
-      _ =>
-        'Masuk dengan Google belum berhasil. Periksa koneksi lalu coba lagi.',
-    };
-  }
-  if (e is FirebaseAuthException) {
-    return switch (e.code) {
-      'popup-closed-by-user' || 'cancelled-popup-request' =>
-        'Login Google dibatalkan. Silakan coba lagi.',
-      'popup-blocked' =>
-        'Browser memblokir jendela Google. Izinkan pop-up lalu coba lagi.',
-      'account-exists-with-different-credential' =>
-        'Email sudah menggunakan metode masuk lain. Masuk dengan metode sebelumnya.',
-      'operation-not-allowed' =>
-        'Masuk Google belum diaktifkan. Hubungi pengelola aplikasi.',
-      'network-request-failed' =>
-        'Tidak terhubung. Periksa koneksi lalu coba lagi.',
-      'invalid-credential' ||
-      'wrong-password' ||
-      'user-not-found' => 'Email atau kata sandi belum cocok.',
-      'email-already-in-use' =>
-        'Email tidak dapat dipakai. Coba masuk atau reset kata sandi.',
-      'weak-password' => 'Gunakan kata sandi minimal 8 karakter.',
-      'too-many-requests' => 'Terlalu banyak percobaan. Tunggu sebentar.',
-      _ => 'Autentikasi gagal. Periksa isian dan coba lagi.',
-    };
-  }
-  if (e is FirebaseFunctionsException) {
-    return e.message ?? 'Layanan belum tersedia. Coba lagi.';
-  }
   return 'Tidak dapat menyelesaikan tindakan. Periksa koneksi dan coba lagi.';
 }
